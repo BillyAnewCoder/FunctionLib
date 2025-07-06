@@ -344,4 +344,48 @@ function RAPI.keys(tbl)
     return out
 end
 
+do
+    local _velSpoof   = false
+    local _velVector  = Vector3.zero
+    local _velHook
+
+    local function ensureHook()
+        if _velHook then return end
+        _velHook = RAPI.heartbeat(function()
+            if not _velSpoof then return end
+            local c   = Players.LocalPlayer.Character
+            local hrp = c and c:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.AssemblyLinearVelocity = _velVector
+                pcall(function() hrp.Velocity = _velVector end)
+            end
+        end)
+    end
+
+    --- Toggle spoofing on/off with keybind
+    --- @param key Enum.KeyCode | nil
+    --- @param vec Vector3       | nil
+    function RAPI.toggle_velocity_spoof(key, vec)
+        key = key or Enum.KeyCode.V
+        if vec then _velVector = vec end
+        ensureHook()
+
+        local flagKey = "__RAPI_VELKEY_" .. key.Value
+        if not _G[flagKey] then
+            _G[flagKey] = true
+            RAPI.bind_key(key, function()
+                _velSpoof = not _velSpoof
+                RAPI.notif("Velocity spoof: " .. tostring(_velSpoof), 2)
+            end)
+        end
+    end
+
+    --- Set the spoofed velocity at runtime
+    --- @param vec Vector3
+    function RAPI.set_velocity_vector(vec)
+        _velVector = vec
+        RAPI.notif("Velocity spoof vector set to: " .. tostring(vec), 2)
+    end
+end
+
 return RAPI
