@@ -495,23 +495,20 @@ end
 ----------------------------------------------------------------
 --  RAPI.god_mode  – true invincibility toggle
 --      • Blocks TakeDamage & BreakJoints
---      • Ignores fall damage, lava, kill bricks
---      • Keeps MaxHealth + Health = ∞ every frame
---      • Re‑applies automatically on respawn
---      • Press  K  (default) to toggle on/off
+--      • Nullifies fall damage, lava, kill bricks
+--      • Health + MaxHealth = ∞
+--      • Re‑hooks on respawn
+--      • Press K to toggle
 ----------------------------------------------------------------
 do
-    local _god         = false               -- on/off flag
-    local _hookedHum   = {}                  -- cache for patched humanoids
-    local _maintainHB  = nil                 -- Heartbeat loop
+    local _god         = false
+    local _hookedHum   = {}
+    local _maintainHB  = nil
 
-    ------------------------------------------------------------
-    --  internal helpers
-    ------------------------------------------------------------
     local function maintainHealth(h)
         if _maintainHB then return end
         _maintainHB = RAPI.heartbeat(function()
-            if _god and h.Parent and h.Parent:IsDescendantOf(workspace) then
+            if _god and h and h.Parent and h.Parent:IsDescendantOf(workspace) then
                 h.MaxHealth = math.huge
                 h.Health    = math.huge
             end
@@ -522,23 +519,23 @@ do
         if _hookedHum[h] then return end
         _hookedHum[h] = true
 
-        --  baseline infinite health
-        h.MaxHealth, h.Health = math.huge, math.huge
+        h.MaxHealth = math.huge
+        h.Health = math.huge
 
-        --  swallow direct damage calls
+        -- Block TakeDamage()
         RAPI.hook_fn(h.TakeDamage, function() end)
 
-        --  swallow BreakJoints() on the character Model (instant kill)
+        -- Block BreakJoints() from model
         local model = h:FindFirstAncestorWhichIsA("Model")
         if model and typeof(model.BreakJoints) == "function" then
             RAPI.hook_fn(model.BreakJoints, function() end)
         end
 
-        --  ignore fall‑damage state
+        -- Prevent fall damage logic
         h.StateChanged:Connect(function(_, new)
             if _god and new == Enum.HumanoidStateType.Freefall then
                 h:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
-                task.delay(0.1, function()
+                task.delay(0.15, function()
                     if h then
                         h:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
                     end
@@ -546,14 +543,19 @@ do
             end
         end)
 
-        --  ignore lava / kill parts (basic touch filter)
-        local hrp = h.Parent:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.Touched:Connect(function(part)
+        -- Handle lava / killpart touch
+        local root = h.Parent and h.Parent:FindFirstChild("HumanoidRootPart")
+        if root and not root:FindFirstChild("__RAPI_KILLBLOCK") then
+            local tag = Instance.new("BoolValue")
+            tag.Name = "__RAPI_KILLBLOCK"
+            tag.Parent = root
+
+            root.Touched:Connect(function(part)
                 if not _god then return end
-                local n = (part.Name or ""):lower()
-                if n:find("lava") or n:find("kill") or n:find("damage") then
-                    --  nothing needed; health is clamped every frame
+                local name = (part.Name or ""):lower()
+                if name:find("lava") or name:find("kill") or name:find("damage") then
+                    h.Health = math.huge
+                    h.MaxHealth = math.huge
                 end
             end)
         end
@@ -566,31 +568,26 @@ do
         if hum then patchHumanoid(hum) end
     end
 
-    ------------------------------------------------------------
-    --  public toggle
-    ------------------------------------------------------------
-    --- Toggle true invincibility.
-    --- @param key Enum.KeyCode|nil  (default K)
+    --- Toggle invincibility
+    --- @param key Enum.KeyCode|nil
     function RAPI.god_mode(key)
         key = key or Enum.KeyCode.K
         local plr = game:GetService("Players").LocalPlayer
 
-        --  initial patch
         if plr.Character then onCharacter(plr.Character) end
         plr.CharacterAdded:Connect(onCharacter)
 
-        --  bind toggle key (once)
         local flag = "__RAPI_GOD_TOGGLE_" .. key.Value
         if not _G[flag] then
             _G[flag] = true
             RAPI.bind_key(key, function()
                 _god = not _god
-                RAPI.notif("God‑mode: " .. tostring(_god), 2)
+                RAPI.notif("God-mode: " .. tostring(_god), 2)
             end)
         end
 
         _god = true
-        RAPI.notif("God‑mode: true", 2)
+        RAPI.notif("God-mode: true", 2)
     end
 end
 ----------------------------------------------------------------
