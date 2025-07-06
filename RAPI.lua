@@ -560,6 +560,47 @@ do
     end
 end
 ----------------------------------------------------------------
+if not RAPI.god_mode then
+    local _god, _hooked, _stopLoop = false, {}, nil
+    local function patchHumanoid(h)
+        if _hooked[h] then return end
+        _hooked[h] = true
+        h.MaxHealth = math.huge
+        h.Health = math.huge
+        RAPI.hook_fn(h.TakeDamage, function() end)
+        RAPI.hook_fn(h.BreakJoints, function() end)
+        if not _stopLoop then
+            _stopLoop = RAPI.heartbeat(function()
+                if not _god then return end
+                local char = h.Parent
+                if char and char:IsDescendantOf(workspace) then
+                    h.MaxHealth = math.huge
+                    h.Health = math.huge
+                end
+            end)
+        end
+    end
+    local function setup(char)
+        local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+        if hum then patchHumanoid(hum) end
+    end
+    function RAPI.god_mode(key)
+        key = key or Enum.KeyCode.K
+        local ply = game:GetService("Players").LocalPlayer
+        if ply.Character then setup(ply.Character) end
+        ply.CharacterAdded:Connect(setup)
+        local flag = "__RAPI_GOD_" .. key.Value
+        if not _G[flag] then
+            _G[flag] = true
+            RAPI.bind_key(key, function()
+                _god = not _god
+                RAPI.notif("God‑mode: " .. tostring(_god), 2)
+            end)
+        end
+        _god = true
+        RAPI.notif("God‑mode: true", 2)
+    end
+end
 
 
 return RAPI
