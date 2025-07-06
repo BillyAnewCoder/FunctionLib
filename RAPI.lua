@@ -336,5 +336,12 @@ function RAPI.spoof_ping(ms)
     end
 end
 
+function RAPI.keys(tbl)
+    local out = {}
+    for k in pairs(tbl) do
+        table.insert(out, k)
+    end
+    return out
+end
 
 return RAPI
