@@ -388,4 +388,92 @@ do
     end
 end
 
+do
+    local _fly = false
+    local _speed = 2
+    local _conn
+
+    local _controls = {
+        up = false,
+        down = false,
+        forward = false,
+        back = false,
+        left = false,
+        right = false
+    }
+
+    function RAPI.fly_control(speed, toggleKey)
+        _speed = speed or 2
+        toggleKey = toggleKey or Enum.KeyCode.F
+
+        local p = Players.LocalPlayer
+        local uis = game:GetService("UserInputService")
+
+        -- Key input
+        uis.InputBegan:Connect(function(i, g)
+            if g then return end
+            local kc = i.KeyCode
+            if kc == Enum.KeyCode.Space then _controls.up = true end
+            if kc == Enum.KeyCode.LeftControl then _controls.down = true end
+            if kc == Enum.KeyCode.W then _controls.forward = true end
+            if kc == Enum.KeyCode.S then _controls.back = true end
+            if kc == Enum.KeyCode.A then _controls.left = true end
+            if kc == Enum.KeyCode.D then _controls.right = true end
+        end)
+
+        uis.InputEnded:Connect(function(i)
+            local kc = i.KeyCode
+            if kc == Enum.KeyCode.Space then _controls.up = false end
+            if kc == Enum.KeyCode.LeftControl then _controls.down = false end
+            if kc == Enum.KeyCode.W then _controls.forward = false end
+            if kc == Enum.KeyCode.S then _controls.back = false end
+            if kc == Enum.KeyCode.A then _controls.left = false end
+            if kc == Enum.KeyCode.D then _controls.right = false end
+        end)
+
+        -- Toggle fly mode
+        local flag = "__RAPI_FLY_" .. toggleKey.Value
+        if not _G[flag] then
+            _G[flag] = true
+            RAPI.bind_key(toggleKey, function()
+                _fly = not _fly
+                RAPI.notif("Fly control: " .. tostring(_fly), 2)
+            end)
+        end
+
+        -- Movement loop
+        if not _conn then
+            _conn = RAPI.heartbeat(function()
+                if not _fly then return end
+
+                local char = p.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+                if not hrp then return end
+
+                local cf = hrp.CFrame
+                local dir = Vector3.zero
+
+                if _controls.up then       dir += Vector3.new(0, 1, 0) end
+                if _controls.down then     dir += Vector3.new(0, -1, 0) end
+                if _controls.forward then  dir += cf.LookVector end
+                if _controls.back then     dir -= cf.LookVector end
+                if _controls.left then     dir -= cf.RightVector end
+                if _controls.right then    dir += cf.RightVector end
+
+                if dir.Magnitude > 0 then
+                    hrp.CFrame = cf + dir.Unit * _speed * task.wait()
+                end
+
+                if hum then
+                    pcall(function()
+                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                    end)
+                end
+            end)
+        end
+    end
+end
+
+
 return RAPI
