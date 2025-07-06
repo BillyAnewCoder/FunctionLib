@@ -30,86 +30,48 @@ function RAPI.fire_remote(r,...)      return RAPI.safe(function(... )if r.ClassN
 function RAPI.loop_toggle(flag,dt,f)  return RAPI.thread(function()while flag()do f();task.wait(dt)end end) end
 function RAPI.notif(t,d)              pcall(SG.SetCore,SG,"SendNotification",{Title="RAPI",Text=t,Duration=d or 3}) end
 
-local _getactors=rawget(_G,"getactors")or getactors
-function RAPI.actors()                return _getactors and _getactors()or{} end
-function RAPI.for_actors(f)           for _,a in ipairs(RAPI.actors())do RAPI.thread(function()f(a)end)end end
-function RAPI.actor_wait(n)           while true do for _,a in ipairs(RAPI.actors())do if a.Name==n then return a end end;task.wait()end end
-function RAPI.run_on_actor(n,f)       local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)a.Name=n;return RAPI.thread(function()f(a)end) end
-function RAPI.actor_clear(n)
-    local a=workspace:FindFirstChild(n)
-    if a and a:IsA("Actor") then for _,c in ipairs(a:GetChildren())do c:Destroy()end end
+local _getactors = rawget(_G,"getactors") or getactors
+
+function RAPI.actors()                             return _getactors and _getactors() or {} end
+function RAPI.for_actors(f)                        for _,a in ipairs(RAPI.actors()) do RAPI.thread(function() f(a) end) end end
+function RAPI.actor_wait(n)                        while true do for _,a in ipairs(RAPI.actors()) do if a.Name==n then return a end end task.wait() end end
+function RAPI.run_on_actor(n,f)                    local a=workspace:FindFirstChild(n) or Instance.new("Actor",workspace) a.Name=n return RAPI.thread(function() f(a) end) end
+
+function RAPI.bind_actor(n,init)
+    local function bind(a)
+        if a:GetAttribute("__RAPI_BOUND") then return end
+        a:SetAttribute("__RAPI_BOUND",true)
+        RAPI.thread(function() init(a) end)
+        a.Destroying:Connect(function() RAPI.thread(function() bind(RAPI.actor_wait(n)) end) end)
+    end
+    bind(workspace:FindFirstChild(n) or Instance.new("Actor",workspace))
 end
 
-function RAPI.actor_draw_box(n,size,color)
-    local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)
-    a.Name=n
-    local p=Instance.new("Part")
-    p.Anchored=true
-    p.Size=size or Vector3.new(4,4,4)
-    p.Color=color or Color3.fromRGB(0,170,255)
-    p.Parent=a
-    return p
-end
+function RAPI.actor_clear(n)                       local a=workspace:FindFirstChild(n) if a and a:IsA("Actor") then for _,c in ipairs(a:GetChildren()) do c:Destroy() end end end
+function RAPI.actor_draw_box(n,s,c)                local a=workspace:FindFirstChild(n) or Instance.new("Actor",workspace) a.Name=n local p=Instance.new("Part") p.Anchored=true p.CanCollide=false p.Size=s or Vector3.new(4,4,4) p.Color=c or Color3.fromRGB(0,170,255) p.CFrame=workspace.CurrentCamera.CFrame+Vector3.new(0,5,0) p.Parent=a return p end
 
 function RAPI.actor_context(n)
-    local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)
-    a.Name=n
-    return setmetatable({actor=a},{
-        __index=function(_,k)
-            return function(_,f,...)
-                return RAPI[k]and RAPI[k](f or function()end,...) or nil
-            end
-        end})
+    local a=workspace:FindFirstChild(n) or Instance.new("Actor",workspace) a.Name=n
+    return setmetatable({actor=a},{__index=function(_,k) local fn=RAPI[k] if type(fn)=="function" then return function(_,...) return fn(...) end end end})
 end
 
-function RAPI.actor_remote_hook(n,remoteName,cb)
-    local a=workspace:FindFirstChild(n)
-    if not a then return end
-    for _,r in ipairs(a:GetDescendants())do
-        if r:IsA("RemoteEvent") and r.Name==remoteName then
-            return RAPI.hook_fn(r.FireServer,function(self,...)return cb(self,...)end)
+function RAPI.actor_remote_hook(n,rem,cb)
+    local a=workspace:FindFirstChild(n) if not a then return end
+    for _,r in ipairs(a:GetDescendants()) do
+        if r:IsA("RemoteEvent") and r.Name==rem then
+            return RAPI.hook_fn(r.FireServer,function(self,...) return cb(self,...) end)
         end
     end
 end
 
-function RAPI.actor_debug(name, cfg)
-    local a = workspace:FindFirstChild(name) or Instance.new("Actor", workspace)
-    a.Name = name
-
-    -- draw part
-    if cfg.draw then
-        local p = Instance.new("Part")
-        p.Anchored = true
-        p.Size     = cfg.size or Vector3.new(4, 4, 4)
-        p.Color    = cfg.color or Color3.fromRGB(0, 170, 255)
-        p.Name     = "__debug_visual"
-        p.Transparency = cfg.transparency or 0.25
-        p.CFrame   = cfg.cframe or workspace.CurrentCamera.CFrame + Vector3.new(0,5,0)
-        p.CanCollide = false
-        p.Parent   = a
-    end
-
-    -- logging
-    if cfg.heartbeat_log then
-        RAPI.heartbeat(function()
-            print("[actor_debug:"..name.."] heartbeat")
-        end)
-    end
-    if cfg.render_log then
-        RAPI.render(function()
-            print("[actor_debug:"..name.."] render")
-        end)
-    end
-
-    -- optional callback on tick
-    if cfg.on_tick then
-        RAPI.loop(cfg.interval or 1, function()
-            cfg.on_tick(a)
-        end)
-    end
-
-    -- return the actor object
+function RAPI.actor_debug(n,cfg)
+    cfg=cfg or {} local a=workspace:FindFirstChild(n) or Instance.new("Actor",workspace) a.Name=n
+    if cfg.draw then RAPI.actor_draw_box(n,cfg.size,cfg.color) end
+    if cfg.heartbeat_log then RAPI.heartbeat(function() print("[actor_debug:"..n.."] heartbeat") end) end
+    if cfg.render_log   then RAPI.render   (function() print("[actor_debug:"..n.."] render")   end) end
+    if cfg.on_tick      then RAPI.loop(cfg.interval or 1,function() cfg.on_tick(a) end) end
     return a
 end
+
 
 return RAPI
