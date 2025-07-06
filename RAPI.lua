@@ -541,7 +541,86 @@ do
     end
 end
 ----------------------------------------------------------------
+----------------------------------------------------------------
+--  RAPI.no_stun_no_fall  – bypass StunController + FallDamage
+--      • Removes moveSpeed / jumpHeight zeroing
+--      • Blocks the GroundHit remote
+--      • Stops local cancel‑callbacks so you can still click / place
+--      • Toggle with  L  (change key if you want)
+----------------------------------------------------------------
+do
+    local _on      = false
+    local _bindKey = Enum.KeyCode.L
+    local _maid    = nil
 
+    local function startBypass()
+        if _maid then return end
+        _maid = RAPI.heartbeat(function()
+            -- 1) Nuke Movement & Jump modifiers every frame
+            local knit     = getrenv()._G and getrenv()._G.KnitClient or nil
+            if knit and knit.Controllers then
+                local sprint = knit.Controllers.SprintController
+                local jump   = knit.Controllers.JumpHeightController
+                if sprint then pcall(function() sprint:getMovementStatusModifier():clear() end) end
+                if jump   then pcall(function() jump:getJumpModifier():clear()           end) end
+            end
+        end)
+
+        -- 2) Hook GroundHit remote to stop fall‑damage packets
+        for _, fn in ipairs(getgc(true)) do
+            if typeof(fn) == "table" and rawget(fn, "SendToServer") and rawget(fn, "Name") == "GroundHit" then
+                if not rawget(fn, "__RAPI_PATCHED") then
+                    rawset(fn, "__RAPI_PATCHED", true)
+                    RAPI.hook_fn(fn.SendToServer, function() end)
+                end
+            end
+        end
+
+        -- 3) Cancel any newly‑added StunController modifiers instantly
+        local ClientSync = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include")
+            .RuntimeLib).import(script,
+            game.ReplicatedStorage, "rbxts_include", "node_modules", "@easy-games",
+            "game-core", "out").WatchCharacter
+
+        -- watch player every 3 s in case controller reinstalls
+        RAPI.loop(3, function()
+            local lp = game:GetService("Players").LocalPlayer
+            local char = lp.Character
+            if not char then return end
+            char:SetAttribute("StunnedUntilTime", -1)
+            char:SetAttribute("SnaredUntilTime",  -1)
+            char:SetAttribute("Locked",           0)
+        end)
+
+        print("[RAPI] Stun & fall‑damage bypass ON")
+        RAPI.notif("No‑stun / No‑fall ON", 2)
+    end
+
+    local function stopBypass()
+        if _maid then
+            _maid:Disconnect()
+            _maid = nil
+        end
+        print("[RAPI] Stun & fall‑damage bypass OFF")
+        RAPI.notif("No‑stun / No‑fall OFF", 2)
+    end
+
+    -- public toggle
+    function RAPI.no_stun_no_fall(key)
+        if key then _bindKey = key end
+        local flag = "__RAPI_NOSTUN_".._bindKey.Value
+        if not _G[flag] then
+            _G[flag] = true
+            RAPI.bind_key(_bindKey, function()
+                _on = not _on
+                if _on then startBypass() else stopBypass() end
+            end)
+        end
+        _on = true
+        startBypass()
+    end
+end
+----------------------------------------------------------------
 ----------------------------------------------------------------
 --  RAPI.god_mode  – true invincibility toggle
 --      • Blocks TakeDamage & BreakJoints
