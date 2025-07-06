@@ -37,14 +37,29 @@ function RAPI.for_actors(f)                        for _,a in ipairs(RAPI.actors
 function RAPI.actor_wait(n)                        while true do for _,a in ipairs(RAPI.actors()) do if a.Name==n then return a end end task.wait() end end
 function RAPI.run_on_actor(n,f)                    local a=workspace:FindFirstChild(n) or Instance.new("Actor",workspace) a.Name=n return RAPI.thread(function() f(a) end) end
 
-function RAPI.bind_actor(n,init)
+--  bind_actor(name , on_init , on_remove?)
+--  • on_init(actor)   runs once per new Actor instance
+--  • on_remove(actor) runs just before that Actor is destroyed
+function RAPI.bind_actor(name, on_init, on_remove)
     local function bind(a)
         if a:GetAttribute("__RAPI_BOUND") then return end
-        a:SetAttribute("__RAPI_BOUND",true)
-        RAPI.thread(function() init(a) end)
-        a.Destroying:Connect(function() RAPI.thread(function() bind(RAPI.actor_wait(n)) end) end)
+        a:SetAttribute("__RAPI_BOUND", true)
+
+        -- init once
+        RAPI.thread(function() on_init(a) end)
+
+        -- handle removal / respawn
+        a.Destroying:Connect(function()
+            if on_remove then pcall(on_remove, a) end      -- cleanup
+            RAPI.thread(function()                          -- re‑bind after respawn
+                local newA = RAPI.actor_wait(name)
+                bind(newA)
+            end)
+        end)
     end
-    bind(workspace:FindFirstChild(n) or Instance.new("Actor",workspace))
+
+    -- first bind (create actor if missing)
+    bind(workspace:FindFirstChild(name) or Instance.new("Actor", workspace, {Name = name}))
 end
 
 function RAPI.actor_clear(n)                       local a=workspace:FindFirstChild(n) if a and a:IsA("Actor") then for _,c in ipairs(a:GetChildren()) do c:Destroy() end end end
