@@ -72,4 +72,44 @@ function RAPI.actor_remote_hook(n,remoteName,cb)
     end
 end
 
+function RAPI.actor_debug(name, cfg)
+    local a = workspace:FindFirstChild(name) or Instance.new("Actor", workspace)
+    a.Name = name
+
+    -- draw part
+    if cfg.draw then
+        local p = Instance.new("Part")
+        p.Anchored = true
+        p.Size     = cfg.size or Vector3.new(4, 4, 4)
+        p.Color    = cfg.color or Color3.fromRGB(0, 170, 255)
+        p.Name     = "__debug_visual"
+        p.Transparency = cfg.transparency or 0.25
+        p.CFrame   = cfg.cframe or workspace.CurrentCamera.CFrame + Vector3.new(0,5,0)
+        p.CanCollide = false
+        p.Parent   = a
+    end
+
+    -- logging
+    if cfg.heartbeat_log then
+        RAPI.heartbeat(function()
+            print("[actor_debug:"..name.."] heartbeat")
+        end)
+    end
+    if cfg.render_log then
+        RAPI.render(function()
+            print("[actor_debug:"..name.."] render")
+        end)
+    end
+
+    -- optional callback on tick
+    if cfg.on_tick then
+        RAPI.loop(cfg.interval or 1, function()
+            cfg.on_tick(a)
+        end)
+    end
+
+    -- return the actor object
+    return a
+end
+
 return RAPI
