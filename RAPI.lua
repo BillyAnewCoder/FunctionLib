@@ -492,6 +492,74 @@ end
 ----------------------------------------------------------------
 --  End of fly_control module
 ----------------------------------------------------------------
+----------------------------------------------------------------
+--  RAPI.god_mode  – true invincibility toggle
+--      • Blocks TakeDamage / BreakJoints
+--      • Sets MaxHealth + Health = ∞ every frame
+--      • Re‑applies on respawn
+----------------------------------------------------------------
+do
+    local _god      = false
+    local _hooked   = {}
+    local _stopLoop = nil
+
+    local function patchHumanoid(h)
+        if _hooked[h] then return end
+        _hooked[h] = true
+
+        -- infinite health baseline
+        h.MaxHealth = math.huge
+        h.Health    = math.huge
+
+        -- swallow TakeDamage
+        RAPI.hook_fn(h.TakeDamage, function() end)
+        -- swallow BreakJoints (instant‑kill)
+        RAPI.hook_fn(h.BreakJoints, function() end)
+
+        -- if something still manages to change it, reset next heartbeat
+        if not _stopLoop then
+            _stopLoop = RAPI.heartbeat(function()
+                if not _god then return end
+                local char = h.Parent
+                if char and char:IsDescendantOf(workspace) then
+                    h.MaxHealth = math.huge
+                    h.Health    = math.huge
+                end
+            end)
+        end
+    end
+
+    local function setup(char)
+        local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+        if hum then patchHumanoid(hum) end
+    end
+
+    --- Toggle true invincibility
+    --- @param key Enum.KeyCode | nil
+    function RAPI.god_mode(key)
+        key = key or Enum.KeyCode.K
+        local ply = game:GetService("Players").LocalPlayer
+
+        -- initial apply
+        if ply.Character then setup(ply.Character) end
+        ply.CharacterAdded:Connect(setup)
+
+        -- toggle key (bind once)
+        local flag = "__RAPI_GOD_" .. key.Value
+        if not _G[flag] then
+            _G[flag] = true
+            RAPI.bind_key(key, function()
+                _god = not _god
+                RAPI.notif("God‑mode: " .. tostring(_god), 2)
+            end)
+        end
+
+        -- start active
+        _god = true
+        RAPI.notif("God‑mode: true", 2)
+    end
+end
+----------------------------------------------------------------
 
 
 return RAPI
