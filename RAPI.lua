@@ -35,5 +35,41 @@ function RAPI.actors()                return _getactors and _getactors()or{} end
 function RAPI.for_actors(f)           for _,a in ipairs(RAPI.actors())do RAPI.thread(function()f(a)end)end end
 function RAPI.actor_wait(n)           while true do for _,a in ipairs(RAPI.actors())do if a.Name==n then return a end end;task.wait()end end
 function RAPI.run_on_actor(n,f)       local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)a.Name=n;return RAPI.thread(function()f(a)end) end
+function RAPI.actor_clear(n)
+    local a=workspace:FindFirstChild(n)
+    if a and a:IsA("Actor") then for _,c in ipairs(a:GetChildren())do c:Destroy()end end
+end
+
+function RAPI.actor_draw_box(n,size,color)
+    local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)
+    a.Name=n
+    local p=Instance.new("Part")
+    p.Anchored=true
+    p.Size=size or Vector3.new(4,4,4)
+    p.Color=color or Color3.fromRGB(0,170,255)
+    p.Parent=a
+    return p
+end
+
+function RAPI.actor_context(n)
+    local a=workspace:FindFirstChild(n)or Instance.new("Actor",workspace)
+    a.Name=n
+    return setmetatable({actor=a},{
+        __index=function(_,k)
+            return function(_,f,...)
+                return RAPI[k]and RAPI[k](f or function()end,...) or nil
+            end
+        end})
+end
+
+function RAPI.actor_remote_hook(n,remoteName,cb)
+    local a=workspace:FindFirstChild(n)
+    if not a then return end
+    for _,r in ipairs(a:GetDescendants())do
+        if r:IsA("RemoteEvent") and r.Name==remoteName then
+            return RAPI.hook_fn(r.FireServer,function(self,...)return cb(self,...)end)
+        end
+    end
+end
 
 return RAPI
