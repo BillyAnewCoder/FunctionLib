@@ -1,5 +1,15 @@
-local RS,UIS,Players,SG=game:GetService("RunService"),game:GetService("UserInputService"),game:GetService("Players"),game:GetService("StarterGui")
-local RAPI={}
+-- force actors to run on the main thread (safer for hooks)
+if setfflag then
+    pcall(setfflag, "DebugRunParallelLuaOnMainThread", "true")
+end
+
+local RS      = game:GetService("RunService")
+local UIS     = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local SG      = game:GetService("StarterGui")
+
+local RAPI    = {}
+}
 
 function RAPI.thread(f)               return task.spawn(f) end
 function RAPI.delay(t,f)              return task.delay(t,f) end
