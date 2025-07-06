@@ -492,6 +492,56 @@ end
 ----------------------------------------------------------------
 --  End of fly_control module
 ----------------------------------------------------------------
+
+----------------------------------------------------------------
+--  RAPI.speed_bypass  –  silent extra WalkSpeed without kick
+--      • Keeps Humanoid.WalkSpeed at 16
+--      • Adds ΔCFrame each RenderStepped
+--      • Toggle with key (default = Z)
+----------------------------------------------------------------
+do
+    local _on      = false
+    local _step    = 0.4        -- extra studs per frame  (0.4 ≈ +24 studs/s)
+    local _bindKey = Enum.KeyCode.Z
+    local _conn
+
+    function RAPI.speed_bypass(step, key)
+        _step    = step or _step
+        _bindKey = key  or _bindKey
+
+        -- toggle key (bind once)
+        local flag = "__RAPI_SPEED_" .. _bindKey.Value
+        if not _G[flag] then
+            _G[flag] = true
+            RAPI.bind_key(_bindKey, function()
+                _on = not _on
+                RAPI.notif("Speed‑bypass: " .. tostring(_on), 2)
+                print("[RAPI] speed‑bypass", _on and "ON" or "OFF")
+            end)
+        end
+
+        if _conn then return end
+        _conn = RAPI.render(function(dt)
+            if not _on then return end
+            local lp   = game:GetService("Players").LocalPlayer
+            local char = lp.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum then return end
+
+            -- keep official WalkSpeed legit
+            hum.WalkSpeed = 16
+
+            -- direction = camera facing on XZ
+            local moveDir = Vector3.new(hrp.CFrame.LookVector.X, 0, hrp.CFrame.LookVector.Z)
+            if moveDir.Magnitude > 0 then
+                hrp.CFrame = hrp.CFrame + moveDir.Unit * _step
+            end
+        end)
+    end
+end
+----------------------------------------------------------------
+
 ----------------------------------------------------------------
 --  RAPI.god_mode  – true invincibility toggle
 --      • Blocks TakeDamage & BreakJoints
