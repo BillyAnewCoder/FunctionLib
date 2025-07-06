@@ -131,4 +131,210 @@ do
     workspace.ChildAdded:Connect(function(o) if o:IsA("Actor") then bind(o) end end)
 end
 
+-- REST-like command registry
+local commandRegistry = {}
+
+function RAPI.register(name, fn)
+    assert(type(name) == "string", "Command name must be a string")
+    assert(type(fn) == "function", "Command must be a function")
+    commandRegistry[name] = fn
+end
+
+function RAPI.call(name, ...)
+    local fn = commandRegistry[name]
+    if not fn then
+        warn("[RAPI] No command registered with name:", name)
+        return
+    end
+    local ok, result = pcall(fn, ...)
+    if not ok then
+        warn("[RAPI] Error in command '"..name.."':", result)
+    end
+    return result
+end
+
+function RAPI.list()
+    local keys = {}
+    for k in pairs(commandRegistry) do
+        table.insert(keys, k)
+    end
+    return keys
+end
+
+-- ██▌ Anti-Cheat Utilities ▌██ --
+
+-- Hook .Kick to block forced disconnects
+function RAPI.anti_kick()
+    local lp = Players.LocalPlayer
+    if lp and lp.Kick then
+        RAPI.hook_fn(lp.Kick, function(self, ...)
+            warn("[RAPI] Kick attempt blocked:", ...)
+            return
+        end)
+    end
+end
+
+-- Patch error prompt (StarterGui:SetCore)
+function RAPI.block_errors()
+    RAPI.hook_fn(SG.SetCore, function(self, core, ...)
+        if core == "SendNotification" or core == "ChatMakeSystemMessage" then
+            return self(self, core, ...)
+        end
+        warn("[RAPI] Blocked SetCore call:", core)
+    end)
+end
+
+-- Neutralize specific suspicious signals (e.g., ErrorPrompt, RemoteEvents)
+function RAPI.block_remotes(names)
+    local matched = {}
+    for _, obj in ipairs(getgc(true)) do
+        if typeof(obj) == "Instance" and obj:IsA("RemoteEvent") then
+            for _, target in ipairs(names) do
+                if obj.Name:lower():find(target:lower()) then
+                    local orig = obj.FireServer
+                    RAPI.hook_fn(orig, function(self, ...)
+                        warn("[RAPI] Blocked remote:", self.Name)
+                        return
+                    end)
+                    table.insert(matched, obj.Name)
+                end
+            end
+        end
+    end
+    return matched
+end
+
+-- Universal crash guard (protects calls)
+function RAPI.guard(fn)
+    return function(...)
+        local ok, err = pcall(fn, ...)
+        if not ok then
+            warn("[RAPI] Guarded error:", err)
+        end
+    end
+end
+
+-- ██▌ Advanced Anti-Cheat Tools ▌██ --
+
+-- Fake HumanoidRootPart position (for anti-tp detection)
+function RAPI.fake_position(offset)
+    local lp = Players.LocalPlayer
+    local char = lp.Character or lp.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    local fake = Instance.new("Part")
+    fake.Name = "FakeHRP"
+    fake.Size = Vector3.new(2,2,1)
+    fake.Anchored = true
+    fake.Transparency = 1
+    fake.CanCollide = false
+    fake.Parent = workspace
+
+    RAPI.render(function()
+        fake.CFrame = hrp.CFrame * CFrame.new(offset or Vector3.new(0, 30, 0))
+    end)
+
+    return fake
+end
+
+-- Patch known client loggers (usually used to report tools, movement, or remotes)
+function RAPI.block_loggers()
+    for _, func in ipairs(getgc(true)) do
+        if typeof(func) == "function" and islclosure(func) then
+            local info = debug.getinfo(func)
+            if info.name and info.name:lower():find("log") then
+                RAPI.hook_fn(func, function(...) return end)
+                warn("[RAPI] Logger neutralized:", info.name)
+            end
+        end
+    end
+end
+
+-- Fake key/mouse input for checks like "did player click" or "was input sent"
+function RAPI.fake_input(key, delay)
+    delay = delay or 0.2
+    task.spawn(function()
+        local input = Instance.new("BindableEvent")
+        input.Name = "FakeInput"
+        input.Parent = workspace
+        firetouchinterest(input, Players.LocalPlayer.Character, 0)
+        wait(delay)
+        firetouchinterest(input, Players.LocalPlayer.Character, 1)
+        input:Destroy()
+    end)
+end
+
+-- Auto rejoin after kick
+function RAPI.reconnect_after_kick()
+    RAPI.anti_kick()
+    game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
+        warn("[RAPI] Kick message:", msg)
+        RAPI.notif("Rejoining...", 3)
+        task.wait(2)
+        local tp = game:GetService("TeleportService")
+        local pid = game.PlaceId
+        local uid = game.JobId
+        tp:TeleportToPlaceInstance(pid, uid, Players.LocalPlayer)
+    end)
+end
+
+----------------------------------------------------------------
+--  RAPI – anti‑cheat extras (paste below the previous section)
+----------------------------------------------------------------
+
+-- auto‑block anti‑cheat remotes
+local _acDefault = {"kick","ban","report","cheat","ac","security"}
+local _acBlocked = {}
+function RAPI.auto_block_ac(patterns)
+    patterns = patterns or _acDefault
+    local function m(n)
+        n = n:lower()
+        for _,p in ipairs(patterns) do
+            if n:find(p) then return true end
+        end
+    end
+    local function hook(r)
+        if _acBlocked[r] then return end
+        _acBlocked[r] = true
+        if r:IsA("RemoteEvent") then
+            RAPI.hook_fn(r.FireServer,function() end)
+        else
+            RAPI.hook_fn(r.InvokeServer,function() return nil end)
+        end
+    end
+    for _,d in ipairs(game:GetDescendants()) do
+        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and m(d.Name) then hook(d) end
+    end
+    game.DescendantAdded:Connect(function(d)
+        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and m(d.Name) then hook(d) end
+    end)
+    return _acBlocked
+end
+
+-- spoof linear velocity each heartbeat
+function RAPI.spoof_velocity(v)
+    v = v or Vector3.zero
+    return RAPI.heartbeat(function()
+        local c = Players.LocalPlayer.Character
+        local hrp = c and c:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = v
+            pcall(function() hrp.Velocity = v end)
+        end
+    end)
+end
+
+-- spoof ping value returned to local checks
+local _pingHook
+function RAPI.spoof_ping(ms)
+    if _pingHook then return end
+    local s = game:GetService("Stats"):WaitForChild("Network"):WaitForChild("ServerStatsItem")
+    for _,itm in ipairs(s:GetChildren()) do
+        if itm.Name:lower():find("ping") and itm.GetValue then
+            _pingHook = RAPI.hook_fn(itm.GetValue,function() return ms end)
+            break
+        end
+    end
+end
+
+
 return RAPI
