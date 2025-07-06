@@ -11,6 +11,45 @@ local SG      = game:GetService("StarterGui")
 local RAPI    = {}
 
 function RAPI.thread(f)               return task.spawn(f) end
+----------------------------------------------------------------
+--  RAPI.run_on_thread  – Synapse‑style substitute
+--      • Signature matches SynX:  run_on_thread(function() … end)
+--      • Uses task.spawn under the hood
+--      • Optionally lets you spoof thread‑identity if your exploit
+--        supports setthreadidentity / getthreadidentity
+----------------------------------------------------------------
+do
+    ---@param fn function          the callback to run
+    ---@param tid integer|nil      (optional) thread‑identity level
+    ---@param ... any              extra args for the callback
+    function RAPI.run_on_thread(fn, tid, ...)
+        assert(type(fn) == "function", "run_on_thread expects a function")
+
+        -- if second param isn’t a number, shift args
+        if tid ~= nil and type(tid) ~= "number" then
+            table.insert({...}, 1, tid)
+            tid = nil
+        end
+
+        -- spawn parallel thread
+        task.spawn(function(...)
+            local old
+            if tid and setthreadidentity and getthreadidentity then
+                old = getthreadidentity()
+                pcall(setthreadidentity, tid)
+            end
+
+            -- run user code (pcall for safety)
+            local ok, err = pcall(fn, ...)
+            if not ok then warn("[RAPI.run_on_thread] "..err) end
+
+            if old then
+                pcall(setthreadidentity, old)
+            end
+        end, ...)
+    end
+end
+----------------------------------------------------------------
 function RAPI.delay(t,f)              return task.delay(t,f) end
 function RAPI.loop(dt,f)              return RAPI.thread(function()while true do f();task.wait(dt)end end) end
 function RAPI.render(f)               return RS.RenderStepped:Connect(f) end
