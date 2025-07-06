@@ -45,21 +45,24 @@ function RAPI.bind_actor(name, on_init, on_remove)
         if a:GetAttribute("__RAPI_BOUND") then return end
         a:SetAttribute("__RAPI_BOUND", true)
 
-        -- init once
         RAPI.thread(function() on_init(a) end)
 
-        -- handle removal / respawn
         a.Destroying:Connect(function()
-            if on_remove then pcall(on_remove, a) end      -- cleanup
-            RAPI.thread(function()                          -- re‑bind after respawn
+            if on_remove then pcall(on_remove, a) end
+            RAPI.thread(function()
                 local newA = RAPI.actor_wait(name)
                 bind(newA)
             end)
         end)
     end
 
-    -- first bind (create actor if missing)
-    bind(workspace:FindFirstChild(name) or Instance.new("Actor", workspace, {Name = name}))
+    local a = workspace:FindFirstChild(name)
+    if not a then
+        a = Instance.new("Actor")
+        a.Name = name
+        a.Parent = workspace
+    end
+    bind(a)
 end
 
 function RAPI.actor_clear(n)                       local a=workspace:FindFirstChild(n) if a and a:IsA("Actor") then for _,c in ipairs(a:GetChildren()) do c:Destroy() end end end
