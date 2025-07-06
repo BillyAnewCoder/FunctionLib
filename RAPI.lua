@@ -9,7 +9,6 @@ local Players = game:GetService("Players")
 local SG      = game:GetService("StarterGui")
 
 local RAPI    = {}
-}
 
 function RAPI.thread(f)               return task.spawn(f) end
 function RAPI.delay(t,f)              return task.delay(t,f) end
@@ -131,6 +130,5 @@ do
     for _, a in ipairs(workspace:GetChildren()) do if a:IsA("Actor") then bind(a) end end
     workspace.ChildAdded:Connect(function(o) if o:IsA("Actor") then bind(o) end end)
 end
-
 
 return RAPI
