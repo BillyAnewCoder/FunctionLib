@@ -388,51 +388,64 @@ do
     end
 end
 
+----------------------------------------------------------------
+--  RAPI.fly_control  –  free‑flight with full key control
+--      • default toggle key  =  F
+--      • default speed       =  2 studs / heartbeat
+--      • keys:
+--          W / S = forward / back   (relative to camera)
+--          A / D = strafe
+--          Space = up
+--          LeftCtrl = down
+----------------------------------------------------------------
 do
-    local _fly = false
-    local _speed = 2
-    local _conn
-
-    local _controls = {
-        up = false,
-        down = false,
-        forward = false,
-        back = false,
-        left = false,
-        right = false
+    local _fly  = false                 -- on/off flag
+    local _spd  = 2                     -- studs per heartbeat
+    local _loop = nil                   -- Heartbeat connection
+    local _keyBinds = {                 -- state table for inputs
+        up     = false,
+        down   = false,
+        fwd    = false,
+        back   = false,
+        left   = false,
+        right  = false
     }
 
+    -- Main public entry
+    --- @param speed     number        movement speed (studs per frame)
+    --- @param toggleKey Enum.KeyCode  key to start/stop flight
     function RAPI.fly_control(speed, toggleKey)
-        _speed = speed or 2
-        toggleKey = toggleKey or Enum.KeyCode.F
+        _spd       = speed     or 2
+        toggleKey  = toggleKey or Enum.KeyCode.F
 
-        local p = Players.LocalPlayer
-        local uis = game:GetService("UserInputService")
+        local Players   = game:GetService("Players")
+        local UIS       = game:GetService("UserInputService")
+        local LocalPlayer = Players.LocalPlayer
 
-        -- Key input
-        uis.InputBegan:Connect(function(i, g)
+        -- ╭───────────────── input listeners ─────────────────╮
+        UIS.InputBegan:Connect(function(i, g)
             if g then return end
-            local kc = i.KeyCode
-            if kc == Enum.KeyCode.Space then _controls.up = true end
-            if kc == Enum.KeyCode.LeftControl then _controls.down = true end
-            if kc == Enum.KeyCode.W then _controls.forward = true end
-            if kc == Enum.KeyCode.S then _controls.back = true end
-            if kc == Enum.KeyCode.A then _controls.left = true end
-            if kc == Enum.KeyCode.D then _controls.right = true end
+            local k = i.KeyCode
+            if k == Enum.KeyCode.Space       then _keyBinds.up     = true end
+            if k == Enum.KeyCode.LeftControl then _keyBinds.down   = true end
+            if k == Enum.KeyCode.W           then _keyBinds.fwd    = true end
+            if k == Enum.KeyCode.S           then _keyBinds.back   = true end
+            if k == Enum.KeyCode.A           then _keyBinds.left   = true end
+            if k == Enum.KeyCode.D           then _keyBinds.right  = true end
         end)
-
-        uis.InputEnded:Connect(function(i)
-            local kc = i.KeyCode
-            if kc == Enum.KeyCode.Space then _controls.up = false end
-            if kc == Enum.KeyCode.LeftControl then _controls.down = false end
-            if kc == Enum.KeyCode.W then _controls.forward = false end
-            if kc == Enum.KeyCode.S then _controls.back = false end
-            if kc == Enum.KeyCode.A then _controls.left = false end
-            if kc == Enum.KeyCode.D then _controls.right = false end
+        UIS.InputEnded:Connect(function(i)
+            local k = i.KeyCode
+            if k == Enum.KeyCode.Space       then _keyBinds.up     = false end
+            if k == Enum.KeyCode.LeftControl then _keyBinds.down   = false end
+            if k == Enum.KeyCode.W           then _keyBinds.fwd    = false end
+            if k == Enum.KeyCode.S           then _keyBinds.back   = false end
+            if k == Enum.KeyCode.A           then _keyBinds.left   = false end
+            if k == Enum.KeyCode.D           then _keyBinds.right  = false end
         end)
+        -- ╰─────────────────────────────────────────────────────╯
 
-        -- Toggle fly mode
-        local flag = "__RAPI_FLY_" .. toggleKey.Value
+        -- toggle key (bind once per KeyCode)
+        local flag = "__RAPI_FLY_TOGGLE_" .. toggleKey.Value
         if not _G[flag] then
             _G[flag] = true
             RAPI.bind_key(toggleKey, function()
@@ -441,30 +454,32 @@ do
             end)
         end
 
-        -- Movement loop
-        if not _conn then
-            _conn = RAPI.heartbeat(function()
+        -- Movement loop (create only once)
+        if not _loop then
+            _loop = RAPI.heartbeat(function(dt)
                 if not _fly then return end
 
-                local char = p.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+                local char = LocalPlayer.Character
+                local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+                local hum  = char and char:FindFirstChildWhichIsA("Humanoid")
                 if not hrp then return end
 
-                local cf = hrp.CFrame
-                local dir = Vector3.zero
+                local cf   = hrp.CFrame
+                local dir  = Vector3.zero
 
-                if _controls.up then       dir += Vector3.new(0, 1, 0) end
-                if _controls.down then     dir += Vector3.new(0, -1, 0) end
-                if _controls.forward then  dir += cf.LookVector end
-                if _controls.back then     dir -= cf.LookVector end
-                if _controls.left then     dir -= cf.RightVector end
-                if _controls.right then    dir += cf.RightVector end
+                if _keyBinds.up    then dir += Vector3.new(0,  1, 0) end
+                if _keyBinds.down  then dir += Vector3.new(0, -1, 0) end
+                if _keyBinds.fwd   then dir += cf.LookVector       end
+                if _keyBinds.back  then dir -= cf.LookVector       end
+                if _keyBinds.left  then dir -= cf.RightVector      end
+                if _keyBinds.right then dir += cf.RightVector      end
 
                 if dir.Magnitude > 0 then
-                    hrp.CFrame = cf + dir.Unit * _speed * task.wait()
+                    hrp.CFrame = cf + dir.Unit * _spd
                 end
 
+                -- keep humanoid in a “normal” state so the server
+                -- doesn’t try to ragdoll or auto‑reset
                 if hum then
                     pcall(function()
                         hum:ChangeState(Enum.HumanoidStateType.Running)
@@ -474,6 +489,9 @@ do
         end
     end
 end
+----------------------------------------------------------------
+--  End of fly_control module
+----------------------------------------------------------------
 
 
 return RAPI
