@@ -91,6 +91,28 @@ local fnHooks,mtHooks={}
 function RAPI.hook_fn(o,n)            if fnHooks[o] then return fnHooks[o] end;local h=hookfunction(o,n)fnHooks[o]=h;return h end
 function RAPI.hook_mt(obj,n,new)      local mt=getrawmetatable(obj)setreadonly(mt,false)if not mtHooks[n] then mtHooks[n]=mt[n]mt[n]=new end;setreadonly(mt,true);return mtHooks[n] end
 
+do
+    local rawNC = getrawmetatable(game).__namecall
+    local stealthNC = {} -- optional filter-based tagging
+
+    function RAPI.hook_namecall(filterFn)
+        if stealthNC.active then return end
+        stealthNC.active = true
+
+        RAPI.hook_mt(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            if filterFn and filterFn(self, method, unpack(args)) then
+                return filterFn(self, method, unpack(args))
+            end
+
+            return rawNC(self, ...)
+        end))
+    end
+end
+
+
 function RAPI.safe(f,...)             local ok,r=pcall(f,...);if not ok then warn(r)end;return ok,r end
 function RAPI.retry(n,w,f,...)        for i=1,n do local ok,r=pcall(f,...);if ok then return r end;task.wait(w)end end
 function RAPI.random_string(l)        local t={}for i=1,l do t[i]=string.char(math.random(97,122))end;return table.concat(t) end
@@ -391,6 +413,36 @@ function RAPI.auto_block_ac(patterns)
 
     return _acBlocked
 end
+
+do
+    local _logFilter = {}
+    local _callLog = {}
+
+    --- Tag + capture a remote call
+    function RAPI.log_call(tag, remote, method, args)
+        table.insert(_callLog, {
+            tag = tag,
+            remote = remote,
+            method = method,
+            args = args,
+            time = os.clock()
+        })
+        if _logFilter[tag] ~= false then
+            print(string.format("[RAPI:Log] [%s] %s -> %s", tag, method, remote.Name))
+        end
+    end
+
+    --- Set filter per tag (false = suppress)
+    function RAPI.set_log_filter(tag, value)
+        _logFilter[tag] = value
+    end
+
+    --- Dump all calls
+    function RAPI.dump_calls()
+        return _callLog
+    end
+end
+
 
 -- spoof linear velocity each heartbeat
 function RAPI.spoof_velocity(v)
