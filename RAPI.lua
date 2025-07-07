@@ -95,28 +95,36 @@ do
     local rawNC = getrawmetatable(game).__namecall
     local stealthNC = {} -- optional filter-based tagging
 
-function RAPI.hook_namecall(filterFn)
+function RAPI.hook_namecall(callback)
     local mt = getrawmetatable(game)
-    setreadonly(mt, false)
+    if not mt then
+        warn("[RAPI] Failed to get raw metatable.")
+        return
+    end
 
-    local raw = rawget(mt, "__namecall")
-    if not raw then
-        -- fallback to __index if __namecall is missing
-        raw = function(self, ...)
-            local method = getnamecallmethod()
-            return self[method](self, ...)
+    local rawNC = rawget(mt, "__namecall")
+
+    if rawNC == nil then
+        warn("[RAPI] '__namecall' is nil, using __index fallback...")
+        rawNC = function(self, ...)
+            local m = getnamecallmethod()
+            return self[m](self, ...)
         end
     end
 
+    -- install only once
+    if RAPI.__ncHooked then return end
+    RAPI.__ncHooked = true
+
     RAPI.hook_mt(game, "__namecall", newcclosure(function(self, ...)
         local method = getnamecallmethod()
-        local args = {...}
+        local result = callback(self, method, ...)
 
-        if filterFn and filterFn(self, method, unpack(args)) then
-            return filterFn(self, method, unpack(args))
+        if result ~= nil then
+            return result
         end
 
-        return raw(self, ...)
+        return rawNC(self, ...)
     end))
 end
 
