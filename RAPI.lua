@@ -10,6 +10,31 @@ local SG      = game:GetService("StarterGui")
 
 local RAPI    = {}
 
+-- ╭───────────────────── secure remote call ─────────────────────╮
+local _fs = "F".. "i".. "r".. "e".. "S".. "e".. "r".. "v".. "e".. "r"
+local _is = "I".. "n".. "v".. "o".. "k".. "e".. "S".. "e".. "r".. "v".. "e".. "r"
+
+function RAPI.call_remote(remote, ...)
+    if typeof(remote) ~= "Instance" then return end
+    local class = remote.ClassName
+    if class == "RemoteEvent" then
+        return remote[_fs](remote, ...)
+    elseif class == "RemoteFunction" then
+        return remote[_is](remote, ...)
+    end
+end
+
+function RAPI.stealth_hook(remote, cb)
+    if typeof(remote) ~= "Instance" then return end
+    if remote:IsA("RemoteEvent") then
+        return RAPI.hook_fn(remote[_fs], function(self, ...) return cb(self, ...) end)
+    elseif remote:IsA("RemoteFunction") then
+        return RAPI.hook_fn(remote[_is], function(self, ...) return cb(self, ...) end)
+    end
+end
+-- ╰──────────────────────────────────────────────────────────────╯
+
+
 function RAPI.thread(f)               return task.spawn(f) end
 ----------------------------------------------------------------
 --  RAPI.run_on_thread  – Synapse‑style substitute
@@ -73,7 +98,12 @@ function RAPI.get_player(q)           for _,p in ipairs(Players:GetPlayers())do 
 
 local function split(p)               local t={}for s in p:gmatch("[^%.]+")do t[#t+1]=s end return t end
 function RAPI.wait_for(p)             local cur=game;for _,seg in ipairs(split(p))do cur=cur:WaitForChild(seg)end;return cur end
-function RAPI.fire_remote(r,...)      return RAPI.safe(function(... )if r.ClassName=="RemoteEvent"then r:FireServer(...)else return r:InvokeServer(...)end end,...) end
+function RAPI.fire_remote(r, ...)
+    return RAPI.safe(function(...)
+        return RAPI.call_remote(r, ...)
+    end, ...)
+end
+
 
 function RAPI.loop_toggle(flag,dt,f)  return RAPI.thread(function()while flag()do f();task.wait(dt)end end) end
 function RAPI.notif(t,d)              pcall(SG.SetCore,SG,"SendNotification",{Title="RAPI",Text=t,Duration=d or 3}) end
@@ -136,10 +166,11 @@ function RAPI.actor_remote_hook(n, r, cb)
     if not a then return end
     for _, e in ipairs(a:GetDescendants()) do
         if e:IsA("RemoteEvent") and e.Name == r then
-            return RAPI.hook_fn(e.FireServer, function(self, ...) return cb(self, ...) end)
+            return RAPI.stealth_hook(e, cb)
         end
     end
 end
+
 
 function RAPI.actor_debug(n, cfg)
     cfg = cfg or {}
@@ -227,13 +258,15 @@ end
 function RAPI.block_remotes(names)
     local matched = {}
     for _, obj in ipairs(getgc(true)) do
-        if typeof(obj) == "Instance" and obj:IsA("RemoteEvent") then
+        if typeof(obj) == "Instance"
+            and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
+
             for _, target in ipairs(names) do
                 if obj.Name:lower():find(target:lower()) then
-                    local orig = obj.FireServer
-                    RAPI.hook_fn(orig, function(self, ...)
-                        warn("[RAPI] Blocked remote:", self.Name)
-                        return
+                    -- stealth‑hook: hides FireServer / InvokeServer strings
+                    RAPI.stealth_hook(obj, function()
+                        warn("[RAPI] Blocked remote:", obj.Name)
+                        return nil   -- swallow call / return nothing
                     end)
                     table.insert(matched, obj.Name)
                 end
@@ -242,6 +275,7 @@ function RAPI.block_remotes(names)
     end
     return matched
 end
+
 
 -- Universal crash guard (protects calls)
 function RAPI.guard(fn)
@@ -321,31 +355,40 @@ end
 ----------------------------------------------------------------
 
 -- auto‑block anti‑cheat remotes
-local _acDefault = {"kick","ban","report","cheat","ac","security"}
+local _acDefault = {"kick", "ban", "report", "cheat", "ac", "security"}
 local _acBlocked = {}
+
 function RAPI.auto_block_ac(patterns)
     patterns = patterns or _acDefault
-    local function m(n)
-        n = n:lower()
-        for _,p in ipairs(patterns) do
-            if n:find(p) then return true end
+
+    local function matches(name)
+        name = name:lower()
+        for _, p in ipairs(patterns) do
+            if name:find(p) then return true end
         end
     end
-    local function hook(r)
-        if _acBlocked[r] then return end
-        _acBlocked[r] = true
-        if r:IsA("RemoteEvent") then
-            RAPI.hook_fn(r.FireServer,function() end)
-        else
-            RAPI.hook_fn(r.InvokeServer,function() return nil end)
+
+    local function hook(remote)
+        if _acBlocked[remote] then return end
+        _acBlocked[remote] = true
+        RAPI.stealth_hook(remote, function()
+            warn("[RAPI] Blocked AC remote:", remote.Name)
+            return nil
+        end)
+    end
+
+    for _, d in ipairs(game:GetDescendants()) do
+        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and matches(d.Name) then
+            hook(d)
         end
     end
-    for _,d in ipairs(game:GetDescendants()) do
-        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and m(d.Name) then hook(d) end
-    end
+
     game.DescendantAdded:Connect(function(d)
-        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and m(d.Name) then hook(d) end
+        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and matches(d.Name) then
+            hook(d)
+        end
     end)
+
     return _acBlocked
 end
 
