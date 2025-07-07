@@ -468,6 +468,10 @@ do
     end
 end
 
+local function buildActionItems(instance, meta, contentLabel)
+    -- insert the entire items = { ... } table from the previous response here
+    return items
+end
 
 -- spoof linear velocity each heartbeat
 function RAPI.spoof_velocity(v)
