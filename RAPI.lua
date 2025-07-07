@@ -1,93 +1,88 @@
---═══════════════ RAPI  ░  safe‑bootstrap ═══════════════--
+--═════════ RAPI BASE / SAFE‑BOOTSTRAP ═════════--
+if setfflag then
+    pcall(setfflag, "DebugRunParallelLuaOnMainThread", "true")
+end
 
--- 1) keep Actors on the main thread (better for hooks)
-if setfflag then pcall(setfflag, "DebugRunParallelLuaOnMainThread", "true") end
-
--- 2) service shorthands
 local RS      = game:GetService("RunService")
 local UIS     = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local SG      = game:GetService("StarterGui")
 
--- 3) root table
 local RAPI = {}
 
---╭──────────────── secure remote helpers ───────────────╮
+-- ░ Secure Remote Calls ░
 local _fs = "F".."i".."r".."e".."S".."e".."r".."v".."e".."r"
 local _is = "I".."n".."v".."o".."k".."e".."S".."e".."r".."v".."e".."r"
 
 function RAPI.call_remote(r, ...)
     if typeof(r) ~= "Instance" then return end
-    local t = r.ClassName
-    return (t == "RemoteEvent"   and r[_fs](r, ...))
-        or (t == "RemoteFunction" and r[_is](r, ...))
+    local c = r.ClassName
+    if c == "RemoteEvent"   then return r[_fs](r, ...)
+    elseif c == "RemoteFunction" then return r[_is](r, ...) end
 end
 
 function RAPI.stealth_hook(r, cb)
     if typeof(r) ~= "Instance" then return end
-    local tgt =
+    local fn =
         r:IsA("RemoteEvent")    and r[_fs]
      or r:IsA("RemoteFunction") and r[_is]
      or nil
-    return tgt and RAPI.hook_fn(tgt, function(self, ...) return cb(self, ...) end)
+    return fn and RAPI.hook_fn(fn, function(self, ...) return cb(self, ...) end)
 end
---╰────────────────────────────────────────────────────────╯
 
--- 4) simple async helpers
-function RAPI.thread(fn)              return task.spawn(fn) end
-function RAPI.delay(t,fn)             return task.delay(t,fn) end
-function RAPI.loop(dt,fn)             return RAPI.thread(function() while true do fn(); task.wait(dt) end end) end
-function RAPI.render(fn)              return RS.RenderStepped:Connect(fn) end
-function RAPI.heartbeat(fn)           return RS.Heartbeat:Connect(fn) end
-function RAPI.stepped(fn)             return RS.Stepped:Connect(fn) end
-function RAPI.once(sig,fn)            local c; c=sig:Connect(function(... ) c:Disconnect(); fn(...) end); return c end
-function RAPI.bind_key(k,fn)          return UIS.InputBegan:Connect(function(i,g) if not g and i.KeyCode==k then fn() end end) end
+-- ░ Thread & Event Helpers ░
+function RAPI.thread(fn)               return task.spawn(fn) end
+function RAPI.delay(t, fn)             return task.delay(t, fn) end
+function RAPI.loop(dt, fn)             return RAPI.thread(function() while true do fn(); task.wait(dt) end end) end
+function RAPI.render(fn)               return RS.RenderStepped:Connect(fn) end
+function RAPI.heartbeat(fn)            return RS.Heartbeat:Connect(fn) end
+function RAPI.stepped(fn)              return RS.Stepped:Connect(fn) end
+function RAPI.once(sig, fn)            local c; c = sig:Connect(function(... ) c:Disconnect(); fn(...) end); return c end
+function RAPI.bind_key(k, fn)          return UIS.InputBegan:Connect(function(i, g) if not g and i.KeyCode == k then fn() end end) end
 
--- 5) run_on_thread  (SynX‑style)
-do
-    function RAPI.run_on_thread(fn, tid, ...)
-        assert(type(fn)=="function","run_on_thread expects function")
-        if tid~=nil and type(tid)~="number" then
-            table.insert({...},1,tid); tid=nil
-        end
-        task.spawn(function(...)
-            local old
-            if tid and setthreadidentity and getthreadidentity then
-                old=getthreadidentity(); pcall(setthreadidentity,tid)
-            end
-            local ok,err=pcall(fn,...)
-            if not ok then warn("[RAPI.run_on_thread] "..tostring(err)) end
-            if old then pcall(setthreadidentity, old) end
-        end,...)
+-- SynX‑style run_on_thread
+function RAPI.run_on_thread(fn, tid, ...)
+    assert(type(fn) == "function", "run_on_thread expects a function")
+    local args = {...}
+    if tid ~= nil and type(tid) ~= "number" then
+        table.insert(args, 1, tid)
+        tid = nil
     end
+    task.spawn(function(...)
+        local old
+        if tid and setthreadidentity and getthreadidentity then
+            old = getthreadidentity(); pcall(setthreadidentity, tid)
+        end
+        local ok, err = pcall(fn, ...)
+        if not ok then warn("[RAPI.run_on_thread] " .. tostring(err)) end
+        if old then pcall(setthreadidentity, old) end
+    end, table.unpack(args))
 end
 
--- 6) GUI helpers
+-- ░ GUI Helpers ░
 function RAPI.protect_gui(g)
     if syn and syn.protect_gui then syn.protect_gui(g)
-    elseif gethui            then g.Parent = gethui()
-    else                           g.Parent = game.CoreGui
-    end
+    elseif gethui then g.Parent = gethui()
+    else g.Parent = game.CoreGui end
     return g
 end
 
-function RAPI.new_window(name,size,pos)
+function RAPI.new_window(name, size, pos)
     local sg = Instance.new("ScreenGui")
     sg.Name, sg.ResetOnSpawn = name, false
     RAPI.protect_gui(sg)
     local f = Instance.new("Frame", sg)
-    f.Size      = size or UDim2.fromOffset(300,200)
-    f.Position  = pos  or UDim2.fromOffset(60,60)
-    f.BackgroundColor3, f.BorderSizePixel = Color3.fromRGB(30,30,30), 0
+    f.Size, f.Position = size or UDim2.fromOffset(300, 200), pos or UDim2.fromOffset(60, 60)
+    f.BackgroundColor3, f.BorderSizePixel = Color3.fromRGB(30, 30, 30), 0
     return sg, f
 end
 
--- 7) safe function / metatable hooks
+-- ░ Safe Function / Metatable Hooks ░
 local fnHooks, mtHooks = {}
 
-function RAPI.hook_fn(orig, new)
-    if not orig or fnHooks[orig] then return fnHooks[orig] end
-    local h = hookfunction(orig, new)
+function RAPI.hook_fn(orig, repl)
+    if fnHooks[orig] then return fnHooks[orig] end
+    local h = hookfunction(orig, repl)
     fnHooks[orig] = h
     return h
 end
@@ -95,55 +90,51 @@ end
 function RAPI.hook_mt(obj, member, new)
     local mt = getrawmetatable(obj)
     if not mt then return end
-    setreadonly(mt,false)
+    setreadonly(mt, false)
     if not mtHooks[member] then
         mtHooks[member] = mt[member]
         mt[member] = new
     end
-    setreadonly(mt,true)
+    setreadonly(mt, true)
     return mtHooks[member]
 end
 
-do
-    local rawNC = getrawmetatable(game).__namecall
-    local stealthNC = {} -- optional filter-based tagging
-
--- overwrite / replace the old version completely
+----------------------------------------------------------------
+--  Safe hook_namecall (no top‑level metatable access)
 ----------------------------------------------------------------
 function RAPI.hook_namecall(callback)
     if RAPI.__ncHooked then return end
     RAPI.__ncHooked = true
 
-    -- 1) prefer exploit’s hookmetamethod
+    -- 1) use executor’s hookmetamethod if present
     if hookmetamethod then
         local old
-        old = hookmetamethod(game,"__namecall",newcclosure(function(self,...)
-            local method = getnamecallmethod()
-            local ok,res = pcall(callback,self,method,...)
+        old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local m  = getnamecallmethod()
+            local ok, res = pcall(callback, self, m, ...)
             if ok and res ~= nil then return res end
-            return old(self,...)
+            return old(self, ...)
         end))
         return old
     end
 
-    -- 2) fallback to raw metatable if available
+    -- 2) raw metatable fallback
     local mt = getrawmetatable(game)
     if not mt then
-        warn("[RAPI] metatable locked; cannot hook __namecall")
+        warn("[RAPI] cannot hook __namecall: metatable locked")
         return
     end
-    setreadonly(mt,false)
-    local orig = rawget(mt,"__namecall") or function(self,...) return self[getnamecallmethod()](self,...) end
-    mt.__namecall = newcclosure(function(self,...)
+    setreadonly(mt, false)
+    local orig = rawget(mt, "__namecall") or function(self, ...) return self[getnamecallmethod()](self, ...) end
+    mt.__namecall = newcclosure(function(self, ...)
         local m = getnamecallmethod()
-        local ok,res = pcall(callback,self,m,...)
+        local ok, res = pcall(callback, self, m, ...)
         if ok and res ~= nil then return res end
-        return orig(self,...)
+        return orig(self, ...)
     end)
-    setreadonly(mt,true)
+    setreadonly(mt, true)
     return orig
 end
-
 
 function RAPI.safe(f,...)             local ok,r=pcall(f,...);if not ok then warn(r)end;return ok,r end
 function RAPI.retry(n,w,f,...)        for i=1,n do local ok,r=pcall(f,...);if ok then return r end;task.wait(w)end end
