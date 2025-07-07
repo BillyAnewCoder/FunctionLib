@@ -95,38 +95,66 @@ do
     local rawNC = getrawmetatable(game).__namecall
     local stealthNC = {} -- optional filter-based tagging
 
+-- overwrite / replace the old version completely
 function RAPI.hook_namecall(callback)
+    if RAPI.__ncHooked then     -- only install once
+        return
+    end
+    RAPI.__ncHooked = true
+
+    ----------------------------------------------------------------
+    -- 1) Preferred path – use exploit's hookmetamethod
+    ----------------------------------------------------------------
+    if hookmetamethod then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall",
+            newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                if callback then
+                    local ok, result = pcall(callback, self, method, ...)
+                    if ok and result ~= nil then
+                        return result          -- user decided to override
+                    end
+                end
+                return oldNamecall(self, ...)  -- default behaviour
+            end))
+        return oldNamecall                     -- (returned in case you need it)
+    end
+
+    ----------------------------------------------------------------
+    -- 2) Fallback – raw metatable (only if accessible)
+    ----------------------------------------------------------------
     local mt = getrawmetatable(game)
     if not mt then
-        warn("[RAPI] Failed to get raw metatable.")
+        warn("[RAPI] Unable to hook __namecall: metatable is locked and hookmetamethod is missing.")
         return
     end
 
+    setreadonly(mt, false)
     local rawNC = rawget(mt, "__namecall")
-
     if rawNC == nil then
-        warn("[RAPI] '__namecall' is nil, using __index fallback...")
+        -- reconstruct default behaviour if the slot is empty
         rawNC = function(self, ...)
             local m = getnamecallmethod()
             return self[m](self, ...)
         end
     end
 
-    -- install only once
-    if RAPI.__ncHooked then return end
-    RAPI.__ncHooked = true
-
-    RAPI.hook_mt(game, "__namecall", newcclosure(function(self, ...)
+    mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
-        local result = callback(self, method, ...)
-
-        if result ~= nil then
-            return result
+        if callback then
+            local ok, result = pcall(callback, self, method, ...)
+            if ok and result ~= nil then
+                return result
+            end
         end
-
         return rawNC(self, ...)
-    end))
+    end)
+    setreadonly(mt, true)
+
+    return rawNC
 end
+
 
 function RAPI.safe(f,...)             local ok,r=pcall(f,...);if not ok then warn(r)end;return ok,r end
 function RAPI.retry(n,w,f,...)        for i=1,n do local ok,r=pcall(f,...);if ok then return r end;task.wait(w)end end
