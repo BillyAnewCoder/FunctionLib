@@ -94,6 +94,13 @@ function RAPI.hook_mt(obj, member, new)
     return mtHooks[member]
 end
 
+function getrawfunction(class, method)
+    local ok, inst = pcall(Instance.new, class)
+    if ok and inst and typeof(inst[method]) == "function" then
+        return inst[method]
+    end
+end
+
 ----------------------------------------------------------------
 --  Safe hook_namecall (no top‑level metatable access)
 ----------------------------------------------------------------
