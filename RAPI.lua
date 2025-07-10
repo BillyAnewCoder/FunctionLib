@@ -1330,5 +1330,10 @@ do
         RAPI.notif("God-mode: true", 2)
     end
 end
-    
+
+function RAPI.init()
+    -- optional startup stuff here
+    RAPI.log_call("RAPI initialized.")
+end
+
 return RAPI
