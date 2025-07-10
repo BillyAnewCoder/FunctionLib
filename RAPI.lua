@@ -163,7 +163,7 @@ function RAPI.inspect_closure(func, tag)
 		constants = {}
 	}
 
-	-- Safely gather upvalues
+	-- === Collect upvalues ===
 	pcall(function()
 		local i = 1
 		while true do
@@ -179,20 +179,41 @@ function RAPI.inspect_closure(func, tag)
 		end
 	end)
 
-	-- Safely gather constants
+	-- === Collect constants ===
 	info.constants = RAPI.safe_enum_constants(func)
 
-	-- Log everything through RAPI
-	local title = "[Closure Inspector]"
-	if tag then
-		title ..= " [" .. tostring(tag) .. "]"
+	-- === Tiered pattern system ===
+	local patternTiers = {
+		critical = { "kick", "ban", "shutdown", "report", "crash" },
+		warning = { "breakjoints", "destroy", "fireserver", "teleport" }
+	}
+
+	local triggered = nil
+
+	for _, const in ipairs(info.constants) do
+		local valueStr = tostring(const.value):lower()
+
+		for tier, patterns in pairs(patternTiers) do
+			for _, pattern in ipairs(patterns) do
+				local match = valueStr:find(pattern)
+				if match then
+					local msg = ("[RAPI %s] Matched: \"%s\" via \"%s\""):format(tier:upper(), valueStr, pattern)
+					RAPI.log_call(msg, {
+						tier = tier,
+						triggeredBy = tag or "Unknown"
+					})
+					if tier == "critical" then
+						RAPI.kill("Detected critical constant: " .. valueStr)
+						return
+					end
+				end
+			end
+		end
 	end
 
-	RAPI.log_call(title, {
+	RAPI.log_call("[Closure Inspector]" .. (tag and (" [" .. tag .. "]") or ""), {
 		upvalueCount = #info.upvalues,
-		constantCount = #info.constants,
-		hasDamageLike = table.find(info.constants, function(c) return c.isDamageLike end) ~= nil,
-		hasMultiplier = table.find(info.constants, function(c) return c.isMultiplier end) ~= nil
+		constantCount = #info.constants
 	})
 
 	return info
