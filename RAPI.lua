@@ -74,29 +74,28 @@ function RAPI.new_window(name, size, pos)
 end
 
 function RAPI.check_closure_depth(func)
-    local depth, seen = 0, {}
-    local f = func
+	local depth = {
+		upvalueCount = 0,
+		constantCount = 0
+	}
+	if typeof(func) ~= "function" then return depth end
 
-    while type(f) == "function" and not seen[f] do
-        seen[f] = true
-        depth += 1
-        local info = debug.getinfo(f)
-        if not info or not info.func then break end
-        f = debug.getupvalue(info.func, 1)
-    end
+	local i = 1
+	while true do
+		local name, _ = debug.getupvalue(func, i)
+		if not name then break end
+		depth.upvalueCount += 1
+		i += 1
+	end
 
-    local upvalueCount = 0
-    for i = 1, math.huge do
-        local name = debug.getupvalue(func, i)
-        if not name then break end
-        upvalueCount += 1
-    end
+	local ok, constants = pcall(debug.getconstants, func)
+	if ok and typeof(constants) == "table" then
+		depth.constantCount = #constants
+	end
 
-    return {
-        depth = depth,
-        upvalueCount = upvalueCount
-    }
+	return depth
 end
+
 
 local fnHooks, mtHooks = {}
 
