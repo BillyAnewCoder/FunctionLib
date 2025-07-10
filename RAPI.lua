@@ -131,16 +131,20 @@ function RAPI.safe_enum_constants(func)
 	local output = {}
 	for i, v in ipairs(constants) do
 		local typ = typeof(v)
-		table.insert(output, {
+		local entry = {
 			index = i,
 			type = typ,
-			value = typ == "Instance" and v:GetFullName() or v
-		})
+			value = v,
+			isInstance = (typ == "Instance"),
+			isEnum = (typeof(v) == "EnumItem"),
+			isString = (typ == "string"),
+			stringValue = (typ == "Instance" and v:GetFullName()) or tostring(v)
+		}
+		table.insert(output, entry)
 	end
 
 	return output
 end
-
 
 local fnHooks, mtHooks = {}
 
