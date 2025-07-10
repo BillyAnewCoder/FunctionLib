@@ -190,34 +190,38 @@ function RAPI.inspect_closure(func, tag)
 
 	local triggered = nil
 
-	for _, const in ipairs(info.constants) do
-		local valueStr = tostring(const.value):lower()
+for _, const in ipairs(info.constants) do
+	local valueStr = tostring(const.value):lower()
 
-		for tier, patterns in pairs(patternTiers) do
-			for _, pattern in ipairs(patterns) do
-				local match = valueStr:find(pattern)
-				if match then
-					local msg = ("[RAPI %s] Matched: \"%s\" via \"%s\""):format(tier:upper(), valueStr, pattern)
+	for tier, patterns in pairs(patternTiers) do
+		for _, pattern in ipairs(patterns) do
+			if valueStr:find(pattern) then
+				local msg = ("[RAPI %s] Matched: \"%s\" via \"%s\""):format(tier:upper(), valueStr, pattern)
+
+				pcall(function()
 					RAPI.log_call(msg, {
 						tier = tier,
 						triggeredBy = tag or "Unknown"
 					})
-					if tier == "critical" then
-						RAPI.kill("Detected critical constant: " .. valueStr)
-						return
-					end
+				end)
+
+				if tier == "critical" then
+					RAPI.kill("Detected critical constant: " .. valueStr)
+					return
 				end
 			end
 		end
 	end
+end
 
+pcall(function()
 	RAPI.log_call("[Closure Inspector]" .. (tag and (" [" .. tag .. "]") or ""), {
 		upvalueCount = #info.upvalues,
 		constantCount = #info.constants
 	})
+end)
 
-	return info
-end
+return info
 
 
 local fnHooks, mtHooks = {}
