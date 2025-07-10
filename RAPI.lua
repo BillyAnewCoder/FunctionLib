@@ -73,6 +73,31 @@ function RAPI.new_window(name, size, pos)
     return sg, f
 end
 
+function RAPI.check_closure_depth(func)
+    local depth, seen = 0, {}
+    local f = func
+
+    while type(f) == "function" and not seen[f] do
+        seen[f] = true
+        depth += 1
+        local info = debug.getinfo(f)
+        if not info or not info.func then break end
+        f = debug.getupvalue(info.func, 1)
+    end
+
+    local upvalueCount = 0
+    for i = 1, math.huge do
+        local name = debug.getupvalue(func, i)
+        if not name then break end
+        upvalueCount += 1
+    end
+
+    return {
+        depth = depth,
+        upvalueCount = upvalueCount
+    }
+end
+
 local fnHooks, mtHooks = {}
 
 function RAPI.hook_fn(orig, repl)
@@ -100,6 +125,22 @@ function getrawfunction(class, method)
         return inst[method]
     end
 end
+
+function RAPI.safe_hook(targetFunc, newFunc)
+    local info = RAPI.check_closure_depth(targetFunc)
+    if info.upvalueCount > 200 then
+        warn("[RAPI.safe_hook] Too many upvalues in target function:", info.upvalueCount)
+        return targetFunc
+    end
+
+    if not islclosure(targetFunc) then
+        warn("[RAPI.safe_hook] Target is not a Lua closure. Aborting hook.")
+        return targetFunc
+    end
+
+    return hookfunction(targetFunc, newcclosure(newFunc))
+end
+
 
 ----------------------------------------------------------------
 --  Safe hook_namecall (no top‑level metatable access)
@@ -137,6 +178,31 @@ function RAPI.hook_namecall(callback)
     setreadonly(mt, true)
     return orig
 end
+
+function RAPI.monitor_stack(limit)
+    limit = limit or 150
+    local depth = 0
+
+    while debug.getinfo(depth + 1) do
+        depth += 1
+        if depth > limit then
+            warn(("[RAPI.monitor_stack] Stack depth exceeded safe limit (%d > %d)"):format(depth, limit))
+            return false
+        end
+    end
+
+    return true
+end
+
+function RAPI.wrap_safe(func, limit)
+    return function(...)
+        if not RAPI.monitor_stack(limit) then
+            return warn("[RAPI.wrap_safe] Aborted: stack overflow risk.")
+        end
+        return func(...)
+    end
+end
+
 
 function RAPI.safe(f,...)             local ok,r=pcall(f,...);if not ok then warn(r)end;return ok,r end
 function RAPI.retry(n,w,f,...)        for i=1,n do local ok,r=pcall(f,...);if ok then return r end;task.wait(w)end end
