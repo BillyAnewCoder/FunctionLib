@@ -96,6 +96,51 @@ function RAPI.check_closure_depth(func)
 	return depth
 end
 
+local function safe_enum_upvalues(func)
+	local success, result = pcall(function()
+		local upvalues = {}
+		local i = 1
+		while true do
+			local name, value = debug.getupvalue(func, i)
+			if not name then break end
+			upvalues[i] = {
+				index = i,
+				name = name,
+				value = value
+			}
+			i += 1
+		end
+		return upvalues
+	end)
+	
+	if success then
+		return result
+	else
+		warn("[RAPI.safe_enum_upvalues] Failed to enumerate upvalues:", result)
+		return nil
+	end
+end
+
+function RAPI.safe_enum_constants(func)
+	local success, constants = pcall(debug.getconstants, func)
+	if not success then
+		warn("[RAPI.safe_enum_constants] Failed to get constants:", constants)
+		return {}
+	end
+
+	local output = {}
+	for i, v in ipairs(constants) do
+		local typ = typeof(v)
+		table.insert(output, {
+			index = i,
+			type = typ,
+			value = typ == "Instance" and v:GetFullName() or v
+		})
+	end
+
+	return output
+end
+
 
 local fnHooks, mtHooks = {}
 
