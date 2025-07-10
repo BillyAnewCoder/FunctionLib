@@ -135,16 +135,69 @@ function RAPI.safe_enum_constants(func)
 			index = i,
 			type = typ,
 			value = v,
-			isInstance = (typ == "Instance"),
-			isEnum = (typeof(v) == "EnumItem"),
-			isString = (typ == "string"),
-			stringValue = (typ == "Instance" and v:GetFullName()) or tostring(v)
+			isInstance = typ == "Instance",
+			isEnum = typ == "EnumItem",
+			isString = typ == "string",
+			isNumber = typ == "number",
+			isBool = typ == "boolean",
+			stringValue = typ == "Instance" and v:GetFullName() or tostring(v)
 		}
+
+		-- Optional heuristic tags
+		if entry.isNumber then
+			local num = v
+			entry.isDamageLike = num > 0 and num <= 500
+			entry.isMultiplier = num > 0 and num <= 2
+			entry.isVectorMagnitude = num >= 50 and num <= 5000
+		end
+
 		table.insert(output, entry)
 	end
 
 	return output
 end
+
+function RAPI.inspect_closure(func, tag)
+	local info = {
+		upvalues = {},
+		constants = {}
+	}
+
+	-- Safely gather upvalues
+	pcall(function()
+		local i = 1
+		while true do
+			local name, val = debug.getupvalue(func, i)
+			if not name then break end
+			table.insert(info.upvalues, {
+				index = i,
+				name = name,
+				type = typeof(val),
+				value = typeof(val) == "Instance" and val:GetFullName() or val
+			})
+			i += 1
+		end
+	end)
+
+	-- Safely gather constants
+	info.constants = RAPI.safe_enum_constants(func)
+
+	-- Log everything through RAPI
+	local title = "[Closure Inspector]"
+	if tag then
+		title ..= " [" .. tostring(tag) .. "]"
+	end
+
+	RAPI.log_call(title, {
+		upvalueCount = #info.upvalues,
+		constantCount = #info.constants,
+		hasDamageLike = table.find(info.constants, function(c) return c.isDamageLike end) ~= nil,
+		hasMultiplier = table.find(info.constants, function(c) return c.isMultiplier end) ~= nil
+	})
+
+	return info
+end
+
 
 local fnHooks, mtHooks = {}
 
