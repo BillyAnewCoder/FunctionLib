@@ -637,6 +637,8 @@ do
 
     --- Tag + capture a remote call
     function RAPI.log_call(tag, remote, method, args)
+        local remoteName = remote and remote.Name or "UnknownRemote"
+
         table.insert(_callLog, {
             tag = tag,
             remote = remote,
@@ -644,8 +646,9 @@ do
             args = args,
             time = os.clock()
         })
+
         if _logFilter[tag] ~= false then
-            print(string.format("[RAPI:Log] [%s] %s -> %s", tag, method, remote.Name))
+            print(string.format("[RAPI:Log] [%s] %s -> %s", tag, method or "UnknownMethod", remoteName))
         end
     end
 
@@ -659,6 +662,7 @@ do
         return _callLog
     end
 end
+
 
 local function buildActionItems(instance, meta, contentLabel)
     local items = {
