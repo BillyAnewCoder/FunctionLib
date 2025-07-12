@@ -1344,4 +1344,5 @@ function RAPI.init()
     RAPI.log_call("RAPI initialized.")
 end
 
+_G.RAPI = RAPI
 return RAPI
