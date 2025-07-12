@@ -8,6 +8,17 @@ local RAPI = {}
 local _fs = "F".."i".."r".."e".."S".."e".."r".."v".."e".."r"
 local _is = "I".."n".."v".."o".."k".."e".."S".."e".."r".."v".."e".."r"
 
+-- Add missing RAPI.kill function
+function RAPI.kill(reason)
+    warn("[RAPI] Kill triggered:", reason)
+    return
+end
+
+-- Add missing RAPI.log_call function
+function RAPI.log_call(message, data)
+    print("[RAPI Log]", message, data and tostring(data) or "")
+end
+
 function RAPI.call_remote(r, ...)
     if typeof(r) ~= "Instance" then return end
     local c = r.ClassName
@@ -159,7 +170,6 @@ function RAPI.inspect_closure(func, tag)
 		constants = {}
 	}
 
-	-- === Collect upvalues ===
 	pcall(function()
 		local i = 1
 		while true do
@@ -175,52 +185,49 @@ function RAPI.inspect_closure(func, tag)
 		end
 	end)
 
-	-- === Collect constants ===
 	info.constants = RAPI.safe_enum_constants(func)
 
-	-- === Tiered pattern system ===
 	local patternTiers = {
 		critical = { "kick", "ban", "shutdown", "report", "crash" },
 		warning = { "breakjoints", "destroy", "fireserver", "teleport" }
 	}
 
-	local triggered = nil
+	for _, const in ipairs(info.constants) do
+		local valueStr = tostring(const.value):lower()
 
-for _, const in ipairs(info.constants) do
-	local valueStr = tostring(const.value):lower()
+		for tier, patterns in pairs(patternTiers) do
+			for _, pattern in ipairs(patterns) do
+				if valueStr:find(pattern) then
+					local msg = ("[RAPI %s] Matched: \"%s\" via \"%s\""):format(tier:upper(), valueStr, pattern)
 
-	for tier, patterns in pairs(patternTiers) do
-		for _, pattern in ipairs(patterns) do
-			if valueStr:find(pattern) then
-				local msg = ("[RAPI %s] Matched: \"%s\" via \"%s\""):format(tier:upper(), valueStr, pattern)
+					pcall(function()
+						RAPI.log_call(msg, {
+							tier = tier,
+							triggeredBy = tag or "Unknown"
+						})
+					end)
 
-				pcall(function()
-					RAPI.log_call(msg, {
-						tier = tier,
-						triggeredBy = tag or "Unknown"
-					})
-				end)
-
-				if tier == "critical" then
-					RAPI.kill("Detected critical constant: " .. valueStr)
-					return
+					if tier == "critical" then
+						RAPI.kill("Detected critical constant: " .. valueStr)
+						return
+					end
 				end
 			end
 		end
 	end
+
+	pcall(function()
+		RAPI.log_call("[Closure Inspector]" .. (tag and (" [" .. tag .. "]") or ""), {
+			upvalueCount = #info.upvalues,
+			constantCount = #info.constants
+		})
+	end)
+
+	return info
 end
 
-pcall(function()
-	RAPI.log_call("[Closure Inspector]" .. (tag and (" [" .. tag .. "]") or ""), {
-		upvalueCount = #info.upvalues,
-		constantCount = #info.constants
-	})
-end)
-
-return info
-
-
-local fnHooks, mtHooks = {}
+-- Fixed variable declaration
+local fnHooks, mtHooks = {}, {}
 
 function RAPI.hook_fn(orig, repl)
     if fnHooks[orig] then return fnHooks[orig] end
@@ -263,15 +270,11 @@ function RAPI.safe_hook(targetFunc, newFunc)
     return hookfunction(targetFunc, newcclosure(newFunc))
 end
 
-
-----------------------------------------------------------------
---  Safe hook_namecall (no top‑level metatable access)
-----------------------------------------------------------------
 function RAPI.hook_namecall(callback)
     if RAPI.__ncHooked then return end
     RAPI.__ncHooked = true
 
-    -- 1) use executor’s hookmetamethod if present
+    -- 1) use executor's hookmetamethod if present
     if hookmetamethod then
         local old
         old = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
@@ -325,7 +328,6 @@ function RAPI.wrap_safe(func, limit)
     end
 end
 
-
 function RAPI.safe(f,...)             local ok,r=pcall(f,...);if not ok then warn(r)end;return ok,r end
 function RAPI.retry(n,w,f,...)        for i=1,n do local ok,r=pcall(f,...);if ok then return r end;task.wait(w)end end
 function RAPI.random_string(l)        local t={}for i=1,l do t[i]=string.char(math.random(97,122))end;return table.concat(t) end
@@ -338,7 +340,6 @@ function RAPI.fire_remote(r, ...)
         return RAPI.call_remote(r, ...)
     end, ...)
 end
-
 
 function RAPI.loop_toggle(flag,dt,f)  return RAPI.thread(function()while flag()do f();task.wait(dt)end end) end
 function RAPI.notif(t,d)              pcall(SG.SetCore,SG,"SendNotification",{Title="RAPI",Text=t,Duration=d or 3}) end
@@ -406,7 +407,6 @@ function RAPI.actor_remote_hook(n, r, cb)
     end
 end
 
-
 function RAPI.actor_debug(n, cfg)
     cfg = cfg or {}
     local a = workspace:FindFirstChild(n) or Instance.new("Actor", workspace)
@@ -466,8 +466,6 @@ function RAPI.list()
     return keys
 end
 
--- ██▌ Anti-Cheat Utilities ▌██ --
-
 -- Hook .Kick to block forced disconnects
 function RAPI.anti_kick()
     local lp = Players.LocalPlayer
@@ -511,7 +509,6 @@ function RAPI.block_remotes(names)
     return matched
 end
 
-
 -- Universal crash guard (protects calls)
 function RAPI.guard(fn)
     return function(...)
@@ -521,8 +518,6 @@ function RAPI.guard(fn)
         end
     end
 end
-
--- ██▌ Advanced Anti-Cheat Tools ▌██ --
 
 -- Fake HumanoidRootPart position (for anti-tp detection)
 function RAPI.fake_position(offset)
@@ -584,10 +579,6 @@ function RAPI.reconnect_after_kick()
         tp:TeleportToPlaceInstance(pid, uid, Players.LocalPlayer)
     end)
 end
-
-----------------------------------------------------------------
---  RAPI – anti‑cheat extras (paste below the previous section)
-----------------------------------------------------------------
 
 -- auto‑block anti‑cheat remotes
 local _acDefault = {"kick", "ban", "report", "cheat", "ac", "security"}
@@ -659,6 +650,45 @@ do
     end
 end
 
+-- Add missing helper functions for the debug utilities
+local function tableToString(tbl)
+    if type(tbl) ~= "table" then return tostring(tbl) end
+    local result = "{"
+    for i, v in ipairs(tbl) do
+        if i > 1 then result = result .. ", " end
+        result = result .. tostring(v)
+    end
+    return result .. "}"
+end
+
+local function tableToHexString(tbl)
+    if type(tbl) ~= "table" then return tostring(tbl) end
+    local result = "{"
+    for i, v in ipairs(tbl) do
+        if i > 1 then result = result .. ", " end
+        if type(v) == "string" then
+            local hex = ""
+            for j = 1, #v do
+                hex = hex .. string.format("%02X", string.byte(v, j))
+            end
+            result = result .. "0x" .. hex
+        else
+            result = result .. tostring(v)
+        end
+    end
+    return result .. "}"
+end
+
+-- Initialize debug utilities if not present
+if not _G.DebugUtilities then
+    _G.DebugUtilities = {
+        log = function(tag, message)
+            print("[" .. tag .. "]", message)
+        end,
+        ignoredRemotes = {},
+        blockedRemotes = {}
+    }
+end
 
 local function buildActionItems(instance, meta, contentLabel)
     local items = {
@@ -688,244 +718,11 @@ local function buildActionItems(instance, meta, contentLabel)
                     end
                 end
             end
-        },
-        {
-            text = "Generate Script",
-            action = function()
-                if not instance or not meta or not meta.argsRaw then
-                    _G.DebugUtilities.log("Error", "Cannot generate script: missing data")
-                    return
-                end
-                
-                local parts = instance:GetFullName():split(".")
-                local lines = {"-- Generated by RemoteSpy", "local remote = game"}
-                
-                for i = 2, #parts do -- Skip "game"
-                    lines[#lines + 1] = (":WaitForChild(%q)"):format(parts[i])
-                end
-                
-                local argTable = {}
-                local comments = {}
-                
-                for i, v in ipairs(meta.argsRaw) do
-                    local argComment = ""
-                    
-                    if type(v) == "string" then
-                        table.insert(argTable, string.format("%q", v))
-                        argComment = string.format("-- [%d] string: %q (length: %d)", i, v, #v)
-                    elseif type(v) == "number" then
-                        table.insert(argTable, tostring(v))
-                        if v == math.floor(v) then
-                            argComment = string.format("-- [%d] integer: %d (0x%X)", i, v, v)
-                        else
-                            argComment = string.format("-- [%d] number: %g", i, v)
-                        end
-                    elseif type(v) == "boolean" then
-                        table.insert(argTable, tostring(v))
-                        argComment = string.format("-- [%d] boolean: %s", i, tostring(v))
-                    elseif type(v) == "nil" then
-                        table.insert(argTable, "nil")
-                        argComment = string.format("-- [%d] nil value", i)
-                    elseif typeof(v) == "Instance" then
-                        local instancePath = v:GetFullName():split(".")
-                        local instanceCode = "game"
-                        for j = 2, #instancePath do
-                            instanceCode = instanceCode .. (":WaitForChild(%q)"):format(instancePath[j])
-                        end
-                        table.insert(argTable, instanceCode)
-                        argComment = string.format("-- [%d] %s: %s (Parent: %s)", i, v.ClassName, v.Name, v.Parent and v.Parent.Name or "nil")
-                    elseif typeof(v) == "Vector3" then
-                        table.insert(argTable, string.format("Vector3.new(%g, %g, %g)", v.X, v.Y, v.Z))
-                        argComment = string.format("-- [%d] Vector3: (%.2f, %.2f, %.2f) magnitude: %.2f", i, v.X, v.Y, v.Z, v.Magnitude)
-                    elseif typeof(v) == "Vector2" then
-                        table.insert(argTable, string.format("Vector2.new(%g, %g)", v.X, v.Y))
-                        argComment = string.format("-- [%d] Vector2: (%.2f, %.2f) magnitude: %.2f", i, v.X, v.Y, v.Magnitude)
-                    elseif typeof(v) == "CFrame" then
-                        table.insert(argTable, string.format("CFrame.new(%g, %g, %g)", v.X, v.Y, v.Z))
-                        argComment = string.format("-- [%d] CFrame: position(%.2f, %.2f, %.2f)", i, v.X, v.Y, v.Z)
-                    elseif typeof(v) == "Color3" then
-                        local r, g, b = math.floor(v.R * 255), math.floor(v.G * 255), math.floor(v.B * 255)
-                        table.insert(argTable, string.format("Color3.fromRGB(%d, %d, %d)", r, g, b))
-                        argComment = string.format("-- [%d] Color3: RGB(%d, %d, %d) hex: #%02X%02X%02X", i, r, g, b, r, g, b)
-                    elseif typeof(v) == "UDim2" then
-                        table.insert(argTable, string.format("UDim2.new(%g, %g, %g, %g)", v.X.Scale, v.X.Offset, v.Y.Scale, v.Y.Offset))
-                        argComment = string.format("-- [%d] UDim2: X{%.2f, %d} Y{%.2f, %d}", i, v.X.Scale, v.X.Offset, v.Y.Scale, v.Y.Offset)
-                    elseif typeof(v) == "EnumItem" then
-                        table.insert(argTable, string.format("Enum.%s.%s", tostring(v.EnumType), v.Name))
-                        argComment = string.format("-- [%d] EnumItem: %s.%s (value: %d)", i, tostring(v.EnumType), v.Name, v.Value)
-                    elseif typeof(v) == "BrickColor" then
-                        table.insert(argTable, string.format("BrickColor.new(%q)", v.Name))
-                        argComment = string.format("-- [%d] BrickColor: %s (number: %d)", i, v.Name, v.Number)
-                    elseif typeof(v) == "Ray" then
-                        table.insert(argTable, string.format("Ray.new(Vector3.new(%g, %g, %g), Vector3.new(%g, %g, %g))", v.Origin.X, v.Origin.Y, v.Origin.Z, v.Direction.X, v.Direction.Y, v.Direction.Z))
-                        argComment = string.format("-- [%d] Ray: origin(%.2f, %.2f, %.2f) direction(%.2f, %.2f, %.2f)", i, v.Origin.X, v.Origin.Y, v.Origin.Z, v.Direction.X, v.Direction.Y, v.Direction.Z)
-                    elseif typeof(v) == "NumberRange" then
-                        table.insert(argTable, string.format("NumberRange.new(%g, %g)", v.Min, v.Max))
-                        argComment = string.format("-- [%d] NumberRange: min=%g max=%g", i, v.Min, v.Max)
-                    elseif typeof(v) == "Region3" then
-                        local min, max = v.CFrame.Position - v.Size/2, v.CFrame.Position + v.Size/2
-                        table.insert(argTable, string.format("Region3.new(Vector3.new(%g, %g, %g), Vector3.new(%g, %g, %g))", min.X, min.Y, min.Z, max.X, max.Y, max.Z))
-                        argComment = string.format("-- [%d] Region3: size(%.2f, %.2f, %.2f)", i, v.Size.X, v.Size.Y, v.Size.Z)
-                    elseif type(v) == "table" then
-                        local tableStr = "{"
-                        local tableInfo = {}
-                        local count = 0
-                        
-                        for k, val in pairs(v) do
-                            count = count + 1
-                            if count > 10 then
-                                tableStr = tableStr .. "... --[[" .. (count - 10) .. " more items]]"
-                                break
-                            end
-                            
-                            local keyStr = type(k) == "string" and k or ("[" .. tostring(k) .. "]")
-                            if type(val) == "string" then
-                                tableStr = tableStr .. string.format("%s = %q, ", keyStr, val)
-                            elseif type(val) == "number" then
-                                tableStr = tableStr .. string.format("%s = %g, ", keyStr, val)
-                            elseif type(val) == "boolean" then
-                                tableStr = tableStr .. string.format("%s = %s, ", keyStr, tostring(val))
-                            else
-                                tableStr = tableStr .. string.format("%s = %s, ", keyStr, tostring(val))
-                            end
-                            
-                            table.insert(tableInfo, typeof(val))
-                        end
-                        
-                        tableStr = tableStr:gsub(", $", "") .. "}"
-                        table.insert(argTable, tableStr)
-                        argComment = string.format("-- [%d] table: %d items, types: %s", i, count, table.concat(tableInfo, ", "))
-                    else
-                        table.insert(argTable, "nil --[[UNSUPPORTED_TYPE]]")
-                        argComment = string.format("-- [%d] %s: %s (unsupported type)", i, typeof(v), tostring(v))
-                    end
-                    
-                    table.insert(comments, argComment)
-                end
-                
-                local methodName = "FireServer"
-                if instance:IsA("RemoteFunction") then
-                    methodName = "InvokeServer"
-                elseif instance:IsA("BindableEvent") then
-                    methodName = "Fire"
-                elseif instance:IsA("BindableFunction") then
-                    methodName = "Invoke"
-                end
-                
-                lines[#lines + 1] = ""
-                lines[#lines + 1] = ("remote:%s(%s)"):format(
-                    methodName,
-                    table.concat(argTable, ", ")
-                )
-                
-                local script = table.concat(lines, "\n")
-                if setclipboard then
-                    setclipboard(script)
-                    _G.DebugUtilities.log("Generated", "Script copied to clipboard")
-                else
-                    _G.DebugUtilities.log("Generated Script", script)
-                    print("Generated Script:\n" .. script)
-                end
-            end
-        },
-        {
-            text = "Repeat Call",
-            action = function()
-                if not meta or not meta.instance or not meta.argsRaw then
-                    _G.DebugUtilities.log("Error", "Missing data for repeat call")
-                    return
-                end
-                
-                local method = meta.invokeMethod or "FireServer"
-                if meta.instance:IsA("RemoteFunction") then
-                    method = "InvokeServer"
-                end
-                
-                if meta.instance[method] and typeof(meta.instance[method]) == "function" then
-                    local success, result = pcall(function()
-                        if method == "InvokeServer" then
-                            return meta.instance[method](meta.instance, unpack(meta.argsRaw))
-                        else
-                            meta.instance[method](meta.instance, unpack(meta.argsRaw))
-                        end
-                    end)
-                    
-                    if success then
-                        local resultText = method .. " called successfully"
-                        if result ~= nil then
-                            resultText = resultText .. " -> " .. tostring(result)
-                        end
-                        _G.DebugUtilities.log("Repeated", resultText)
-                    else
-                        _G.DebugUtilities.log("Error", "Failed to repeat call: " .. tostring(result))
-                    end
-                else
-                    _G.DebugUtilities.log("Error", "Method '" .. method .. "' not found or not callable")
-                end
-            end
-        },
-        {
-            text = "Ignore Remote",
-            action = function()
-                if instance then
-                    _G.DebugUtilities.ignoredRemotes = _G.DebugUtilities.ignoredRemotes or {}
-                    _G.DebugUtilities.ignoredRemotes[instance:GetFullName()] = true
-                    _G.DebugUtilities.log("Ignored", "Remote added to ignore list: " .. instance.Name)
-                end
-            end
-        },
-        {
-            text = "Block Remote",
-            action = function()
-                if instance then
-                    _G.DebugUtilities.blockedRemotes = _G.DebugUtilities.blockedRemotes or {}
-                    _G.DebugUtilities.blockedRemotes[instance:GetFullName()] = true
-                    _G.DebugUtilities.log("Blocked", "Remote blocked: " .. instance.Name)
-                end
-            end
-        },
+        }
     }
-
-    if meta and meta.argsRaw and contentLabel then
-        table.insert(items, {
-            text = (meta.isHexView and "Disable Hex View" or "Enable Hex View"),
-            action = function()
-                meta.isHexView = not (meta.isHexView or false)
-                if meta.isHexView then
-                    contentLabel.Text = "Args: " .. tableToHexString(meta.argsRaw)
-                else
-                    contentLabel.Text = "Args: " .. tableToString(meta.argsRaw)
-                end
-                _G.DebugUtilities.log("View", "Hex view " .. (meta.isHexView and "enabled" or "disabled"))
-            end
-        })
-    end
-
-    if meta and meta.argsRaw then
-        table.insert(items, {
-            text = "Inspect Arguments",
-            action = function()
-                _G.DebugUtilities.log("Inspection", "Detailed argument analysis:")
-                for i, arg in ipairs(meta.argsRaw) do
-                    local argType = typeof(arg)
-                    local info = string.format("[%d] %s: %s", i, argType, tostring(arg))
-                    
-                    if argType == "Instance" then
-                        info = info .. string.format(" (Class: %s, Path: %s)", arg.ClassName, arg:GetFullName())
-                    elseif argType == "table" then
-                        info = info .. string.format(" (Length: %d)", #arg)
-                    end
-                    
-                    _G.DebugUtilities.log("Arg " .. i, info)
-                end
-            end
-        })
-    end
-
     return items
 end
 
--- spoof linear velocity each heartbeat
 function RAPI.spoof_velocity(v)
     v = v or Vector3.zero
     return RAPI.heartbeat(function()
@@ -938,7 +735,6 @@ function RAPI.spoof_velocity(v)
     end)
 end
 
--- spoof ping value returned to local checks
 local _pingHook
 function RAPI.spoof_ping(ms)
     if _pingHook then return end
@@ -977,9 +773,6 @@ do
         end)
     end
 
-    --- Toggle spoofing on/off with keybind
-    --- @param key Enum.KeyCode | nil
-    --- @param vec Vector3       | nil
     function RAPI.toggle_velocity_spoof(key, vec)
         key = key or Enum.KeyCode.V
         if vec then _velVector = vec end
@@ -995,29 +788,17 @@ do
         end
     end
 
-    --- Set the spoofed velocity at runtime
-    --- @param vec Vector3
     function RAPI.set_velocity_vector(vec)
         _velVector = vec
         RAPI.notif("Velocity spoof vector set to: " .. tostring(vec), 2)
     end
 end
 
-----------------------------------------------------------------
---  RAPI.fly_control  –  free‑flight with full key control
---      • default toggle key  =  F
---      • default speed       =  2 studs / heartbeat
---      • keys:
---          W / S = forward / back   (relative to camera)
---          A / D = strafe
---          Space = up
---          LeftCtrl = down
-----------------------------------------------------------------
 do
-    local _fly  = false                 -- on/off flag
-    local _spd  = 2                     -- studs per heartbeat
-    local _loop = nil                   -- Heartbeat connection
-    local _keyBinds = {                 -- state table for inputs
+    local _fly  = false              
+    local _spd  = 2                    
+    local _loop = nil                 
+    local _keyBinds = {              
         up     = false,
         down   = false,
         fwd    = false,
@@ -1026,9 +807,7 @@ do
         right  = false
     }
 
-    -- Main public entry
-    --- @param speed     number        movement speed (studs per frame)
-    --- @param toggleKey Enum.KeyCode  key to start/stop flight
+
     function RAPI.fly_control(speed, toggleKey)
         _spd       = speed     or 2
         toggleKey  = toggleKey or Enum.KeyCode.F
@@ -1037,7 +816,6 @@ do
         local UIS       = game:GetService("UserInputService")
         local LocalPlayer = Players.LocalPlayer
 
-        -- ╭───────────────── input listeners ─────────────────╮
         UIS.InputBegan:Connect(function(i, g)
             if g then return end
             local k = i.KeyCode
@@ -1057,7 +835,6 @@ do
             if k == Enum.KeyCode.A           then _keyBinds.left   = false end
             if k == Enum.KeyCode.D           then _keyBinds.right  = false end
         end)
-        -- ╰─────────────────────────────────────────────────────╯
 
         -- toggle key (bind once per KeyCode)
         local flag = "__RAPI_FLY_TOGGLE_" .. toggleKey.Value
@@ -1093,8 +870,6 @@ do
                     hrp.CFrame = cf + dir.Unit * _spd
                 end
 
-                -- keep humanoid in a “normal” state so the server
-                -- doesn’t try to ragdoll or auto‑reset
                 if hum then
                     pcall(function()
                         hum:ChangeState(Enum.HumanoidStateType.Running)
@@ -1104,19 +879,10 @@ do
         end
     end
 end
-----------------------------------------------------------------
---  End of fly_control module
-----------------------------------------------------------------
 
-----------------------------------------------------------------
---  RAPI.speed_bypass  –  silent extra WalkSpeed without kick
---      • Keeps Humanoid.WalkSpeed at 16
---      • Adds ΔCFrame each RenderStepped
---      • Toggle with key (default = Z)
-----------------------------------------------------------------
 do
     local _on      = false
-    local _step    = 0.4        -- extra studs per frame  (0.4 ≈ +24 studs/s)
+    local _step    = 0.4        
     local _bindKey = Enum.KeyCode.Z
     local _conn
 
@@ -1155,14 +921,7 @@ do
         end)
     end
 end
-----------------------------------------------------------------
-----------------------------------------------------------------
---  RAPI.no_stun_no_fall  – bypass StunController + FallDamage
---      • Removes moveSpeed / jumpHeight zeroing
---      • Blocks the GroundHit remote
---      • Stops local cancel‑callbacks so you can still click / place
---      • Toggle with  L  (change key if you want)
-----------------------------------------------------------------
+
 do
     local _on      = false
     local _bindKey = Enum.KeyCode.L
@@ -1181,7 +940,6 @@ do
             end
         end)
 
-        -- 2) Hook GroundHit remote to stop fall‑damage packets
         for _, fn in ipairs(getgc(true)) do
             if typeof(fn) == "table" and rawget(fn, "SendToServer") and rawget(fn, "Name") == "GroundHit" then
                 if not rawget(fn, "__RAPI_PATCHED") then
@@ -1191,13 +949,6 @@ do
             end
         end
 
-        -- 3) Cancel any newly‑added StunController modifiers instantly
-        local ClientSync = require(game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include")
-            .RuntimeLib).import(script,
-            game.ReplicatedStorage, "rbxts_include", "node_modules", "@easy-games",
-            "game-core", "out").WatchCharacter
-
-        -- watch player every 3 s in case controller reinstalls
         RAPI.loop(3, function()
             local lp = game:GetService("Players").LocalPlayer
             local char = lp.Character
@@ -1235,15 +986,7 @@ do
         startBypass()
     end
 end
-----------------------------------------------------------------
-----------------------------------------------------------------
---  RAPI.god_mode  – true invincibility toggle
---      • Blocks TakeDamage & BreakJoints
---      • Nullifies fall damage, lava, kill bricks
---      • Health + MaxHealth = ∞
---      • Re‑hooks on respawn
---      • Press K to toggle
-----------------------------------------------------------------
+
 do
     local _god         = false
     local _hookedHum   = {}
@@ -1339,7 +1082,6 @@ function RAPI.init()
     -- optional startup stuff here
     RAPI.log_call("RAPI initialized.")
 end
-
 
 -- Optional: initialize parallel execution flag (must be last!)
 if setfflag then
