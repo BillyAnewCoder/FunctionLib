@@ -1,7 +1,3 @@
-if setfflag then
-    pcall(setfflag, "DebugRunParallelLuaOnMainThread", "true")
-end
-
 local RS      = game:GetService("RunService")
 local UIS     = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -27,6 +23,7 @@ function RAPI.stealth_hook(r, cb)
      or nil
     return fn and RAPI.hook_fn(fn, function(self, ...) return cb(self, ...) end)
 end
+
 
 function RAPI.thread(fn)               return task.spawn(fn) end
 function RAPI.delay(t, fn)             return task.delay(t, fn) end
@@ -1342,6 +1339,12 @@ end
 function RAPI.init()
     -- optional startup stuff here
     RAPI.log_call("RAPI initialized.")
+end
+
+
+-- Optional: initialize parallel execution flag (must be last!)
+if setfflag then
+    pcall(setfflag, "DebugRunParallelLuaOnMainThread", "true")
 end
 
 _G.RAPI = RAPI
