@@ -24,7 +24,6 @@ function RAPI.stealth_hook(r, cb)
     return fn and RAPI.hook_fn(fn, function(self, ...) return cb(self, ...) end)
 end
 
-
 function RAPI.thread(fn)               return task.spawn(fn) end
 function RAPI.delay(t, fn)             return task.delay(t, fn) end
 function RAPI.loop(dt, fn)             return RAPI.thread(function() while true do fn(); task.wait(dt) end end) end
